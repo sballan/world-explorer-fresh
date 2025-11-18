@@ -180,7 +180,7 @@ export async function selectInterestingActions(
   world: World,
   playerId: string,
   messageHistory: Message[],
-  maxActions: number = 6,
+  maxActions: number = 9,
 ): Promise<Action[]> {
   // Always include MOVE actions (travel options) - they should be at the top
   const moveActions = actions.filter((a) => a.type === "MOVE");
