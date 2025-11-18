@@ -26,7 +26,8 @@
     "@fresh/plugin-vite": "jsr:@fresh/plugin-vite@^1.0.7",
     "vite": "npm:vite@^7.1.3",
     "tailwindcss": "npm:tailwindcss@^4.1.10",
-    "@tailwindcss/vite": "npm:@tailwindcss/vite@^4.1.12"
+    "@tailwindcss/vite": "npm:@tailwindcss/vite@^4.1.12",
+    "ollama": "npm:ollama@^0.6.2"
   },
   "compilerOptions": {
     "lib": [
@@ -56,5 +57,8 @@
     "types": [
       "vite/client"
     ]
-  }
+  },
+  "unstable": [
+    "kv"
+  ]
 }
