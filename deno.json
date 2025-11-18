@@ -60,5 +60,9 @@
   },
   "unstable": [
     "kv"
-  ]
+  ],
+  "deploy": {
+    "org": "sballan",
+    "app": "world-explorer-fresh"
+  }
 }

@@ -3,7 +3,7 @@ import type { Action, Entity, World } from "./types.ts";
 
 // Configure Ollama client with cloud API
 const ollamaClient = new Ollama({
-  // host: Deno.env.get("OLLAMA_API_URL") || "https://api.ollama.com",
+  host: Deno.env.get("OLLAMA_API_URL") || "https://ollama.com",
   headers: {
     "Authorization": `Bearer ${Deno.env.get("OLLAMA_API_KEY")}`,
   },
