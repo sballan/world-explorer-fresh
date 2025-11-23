@@ -11,7 +11,6 @@ const ollamaClient = new Ollama({
 
 // Model configuration - you can adjust these
 const DEFAULT_MODEL = "gpt-oss:120b-cloud";
-const FAST_MODEL = "gpt-oss:20b-cloud";
 
 // Message type for chat history
 export interface Message {
@@ -231,7 +230,7 @@ Return a JSON array containing exactly ${slotsRemaining} action descriptions fro
 
   try {
     const response = await ollamaClient.chat({
-      model: FAST_MODEL,
+      model: DEFAULT_MODEL,
       messages: [
         ...messageHistory.slice(-5), // Include recent history
         { role: "user", content: prompt },
@@ -285,7 +284,7 @@ ${context}`;
 
   try {
     const response = await ollamaClient.chat({
-      model: FAST_MODEL,
+      model: DEFAULT_MODEL,
       messages: [
         ...messageHistory.slice(-5), // Include recent history
         { role: "user", content: prompt },
@@ -383,7 +382,7 @@ Return ONLY the JSON object for the single discovered entity.`;
 
   try {
     const response = await ollamaClient.chat({
-      model: FAST_MODEL,
+      model: DEFAULT_MODEL,
       messages: [
         ...messageHistory.slice(-5), // Include recent history for context
         { role: "user", content: prompt },

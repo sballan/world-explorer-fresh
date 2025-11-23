@@ -1,7 +1,8 @@
 import type { GameState, SessionData, World } from "./types.ts";
+import type { ISessionManager } from "./session-interface.ts";
 
 // Session management using Deno KV
-export class SessionManager {
+export class SessionManager implements ISessionManager {
   private kv: Deno.Kv | null = null;
 
   async init(): Promise<void> {

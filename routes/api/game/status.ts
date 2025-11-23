@@ -1,7 +1,6 @@
 import { define } from "@/utils.ts";
 import { getSessionManager } from "@/lib/game/session.ts";
-import { ActionEngine } from "@/lib/game/engine.ts";
-import { selectInterestingActions } from "@/lib/game/llm.ts";
+import { GameService } from "@/lib/game/game-service.ts";
 import type { ErrorResponse } from "@/lib/game/types.ts";
 
 export const handler = define.handlers({
@@ -25,88 +24,13 @@ export const handler = define.handlers({
         );
       }
 
-      // Get session
+      // Use GameService to get status
       const sessionManager = await getSessionManager();
-      const session = await sessionManager.getSession(sessionId);
-
-      if (!session) {
-        return new Response(
-          JSON.stringify({
-            error: "Session Error",
-            message: "Session not found",
-          } as ErrorResponse),
-          {
-            status: 404,
-            headers: { "Content-Type": "application/json" },
-          },
-        );
-      }
-
-      // Check if game is initialized
-      if (!session.generatedWorld) {
-        return new Response(
-          JSON.stringify({
-            status: "not_initialized",
-            sessionId,
-            worldDescription: session.worldDescription,
-          }),
-          {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          },
-        );
-      }
-
-      // Check if character is selected
-      if (!session.currentGameState) {
-        const availableCharacters = session.generatedWorld.entities.filter(
-          (e) =>
-            e.type === "person" &&
-            e.location === session.generatedWorld!.starting_location,
-        );
-
-        return new Response(
-          JSON.stringify({
-            status: "character_selection",
-            sessionId,
-            world: session.generatedWorld,
-            openingScene: session.openingScene,
-            availableCharacters,
-          }),
-          {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          },
-        );
-      }
-
-      // Game is active
-      const gameState = session.currentGameState;
-      const world = gameState.world;
-      const playerId = gameState.playerId;
-
-      const engine = new ActionEngine(world);
-      const playerState = engine.getPlayerState(playerId);
-
-      // Generate available actions
-      const allActions = engine.generateValidActions(playerId);
-      const availableActions = await selectInterestingActions(
-        allActions,
-        world,
-        playerId,
-        gameState.messageHistory,
-      );
+      const gameService = new GameService(sessionManager);
+      const result = await gameService.getStatus(sessionId);
 
       return new Response(
-        JSON.stringify({
-          status: "active",
-          sessionId,
-          currentTurn: gameState.currentTurn,
-          playerState,
-          availableActions,
-          worldName: world.world_name,
-          currentLocation: engine.getEntity(playerState?.currentLocation || ""),
-        }),
+        JSON.stringify(result),
         {
           status: 200,
           headers: { "Content-Type": "application/json" },
