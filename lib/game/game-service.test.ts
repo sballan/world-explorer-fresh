@@ -27,7 +27,7 @@ class MockSessionManager implements ISessionManager {
     return "mock-session-id";
   }
 
-  async createSession(worldDescription: string): Promise<SessionData> {
+  createSession(worldDescription: string): Promise<SessionData> {
     const session: SessionData = {
       sessionId: this.generateSessionId(),
       worldDescription,
@@ -38,44 +38,44 @@ class MockSessionManager implements ISessionManager {
       lastActivity: Date.now(),
     };
     this.sessions.set(session.sessionId, session);
-    return session;
+    return Promise.resolve(session);
   }
 
-  async getSession(sessionId: string): Promise<SessionData | null> {
-    return this.sessions.get(sessionId) || null;
+  getSession(sessionId: string): Promise<SessionData | null> {
+    return Promise.resolve(this.sessions.get(sessionId) || null);
   }
 
-  async updateWorld(sessionId: string, world: World): Promise<boolean> {
+  updateWorld(sessionId: string, world: World): Promise<boolean> {
     const session = this.sessions.get(sessionId);
     if (session) {
       session.generatedWorld = world;
-      return true;
+      return Promise.resolve(true);
     }
-    return false;
+    return Promise.resolve(false);
   }
 
-  async updateOpeningScene(
+  updateOpeningScene(
     sessionId: string,
     openingScene: string,
   ): Promise<boolean> {
     const session = this.sessions.get(sessionId);
     if (session) {
       session.openingScene = openingScene;
-      return true;
+      return Promise.resolve(true);
     }
-    return false;
+    return Promise.resolve(false);
   }
 
-  async updateGameState(
+  updateGameState(
     sessionId: string,
     gameState: GameState,
   ): Promise<boolean> {
     const session = this.sessions.get(sessionId);
     if (session) {
       session.currentGameState = gameState;
-      return true;
+      return Promise.resolve(true);
     }
-    return false;
+    return Promise.resolve(false);
   }
 }
 
@@ -85,15 +85,15 @@ class MockSessionManager implements ISessionManager {
 class MockWorldGenerator implements IWorldGenerator {
   constructor(private mockWorld: World | null) {}
 
-  async generateWorld(_worldDescription: string): Promise<World | null> {
-    return this.mockWorld;
+  generateWorld(_worldDescription: string): Promise<World | null> {
+    return Promise.resolve(this.mockWorld);
   }
 
-  async generateOpeningScene(
+  generateOpeningScene(
     _world: World,
     _messageHistory: Message[],
   ): Promise<string> {
-    return "Welcome to the test world!";
+    return Promise.resolve("Welcome to the test world!");
   }
 }
 
@@ -103,14 +103,14 @@ class MockWorldGenerator implements IWorldGenerator {
 class MockNarrator implements INarrator {
   constructor(private mockNarration: string = "You performed an action.") {}
 
-  async narrateAction(
+  narrateAction(
     _action: Action,
     _changes: string[],
     _world: World,
     _playerId: string,
     _messageHistory: Message[],
   ): Promise<string> {
-    return this.mockNarration;
+    return Promise.resolve(this.mockNarration);
   }
 }
 
@@ -120,7 +120,7 @@ class MockNarrator implements INarrator {
 class MockActionSelector implements IActionSelector {
   constructor(private mockActions: Action[] = []) {}
 
-  async selectInterestingActions(
+  selectInterestingActions(
     actions: Action[],
     _world: World,
     _playerId: string,
@@ -129,9 +129,9 @@ class MockActionSelector implements IActionSelector {
   ): Promise<Action[]> {
     // Return mock actions if provided, otherwise return first N actions
     if (this.mockActions.length > 0) {
-      return this.mockActions;
+      return Promise.resolve(this.mockActions);
     }
-    return actions.slice(0, maxActions || 9);
+    return Promise.resolve(actions.slice(0, maxActions || 9));
   }
 }
 
@@ -141,12 +141,12 @@ class MockActionSelector implements IActionSelector {
 class MockDiscoveryGenerator implements IDiscoveryGenerator {
   constructor(private mockDiscovery: Entity | null = null) {}
 
-  async generateDiscovery(
+  generateDiscovery(
     _world: World,
     _playerId: string,
     _messageHistory: Message[],
   ): Promise<Entity | null> {
-    return this.mockDiscovery;
+    return Promise.resolve(this.mockDiscovery);
   }
 }
 
@@ -242,21 +242,21 @@ Deno.test("GameService.initializeGame - retries on invalid world", async () => {
   // First two attempts return invalid world, third returns valid
   let attempt = 0;
   const worldGenerator: IWorldGenerator = {
-    async generateWorld(_desc: string): Promise<World | null> {
+    generateWorld(_desc: string): Promise<World | null> {
       attempt++;
       if (attempt < 3) {
         // Return invalid world (missing entities)
-        return {
+        return Promise.resolve({
           world_name: "Bad World",
           world_description: "Invalid",
           starting_location: "nowhere",
           entities: [],
-        };
+        });
       }
-      return createTestWorld();
+      return Promise.resolve(createTestWorld());
     },
-    async generateOpeningScene(_w: World, _m: Message[]): Promise<string> {
-      return "Welcome!";
+    generateOpeningScene(_w: World, _m: Message[]): Promise<string> {
+      return Promise.resolve("Welcome!");
     },
   };
 
