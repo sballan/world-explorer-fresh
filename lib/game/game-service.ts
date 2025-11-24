@@ -5,14 +5,14 @@ import type {
   INarrator,
   IWorldGenerator,
   Message,
-} from "./llm-interfaces.ts";
+} from "./llm/services/interface.ts";
 import {
   LLMActionSelector,
   LLMDiscoveryGenerator,
   LLMNarrator,
   LLMWorldGenerator,
-} from "./llm-adapters.ts";
-import type { ISessionManager } from "./session-interface.ts";
+} from "./llm/services/index.ts";
+import type { ISessionManager } from "./session/interface.ts";
 import type { Action, Entity, GameState, World } from "./types.ts";
 import { validateWorld } from "./validation.ts";
 

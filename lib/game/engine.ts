@@ -202,7 +202,16 @@ export class ActionEngine {
     action: Action,
   ): { success: boolean; changes: string[]; newState: World } {
     const changes: string[] = [];
-    const player = this.entityMap.get(playerId)!;
+    const player = this.entityMap.get(playerId);
+
+    // Validate player exists
+    if (!player || player.type !== "person") {
+      return {
+        success: false,
+        changes: ["Invalid player"],
+        newState: this.world,
+      };
+    }
 
     // Apply energy cost
     if (action.energyCost > 0) {
@@ -213,21 +222,42 @@ export class ActionEngine {
     }
 
     switch (action.type) {
-      case "MOVE":
+      case "MOVE": {
+        const targetPlace = this.entityMap.get(action.target!);
+        if (!targetPlace || targetPlace.type !== "place") {
+          return {
+            success: false,
+            changes: [`Invalid destination: ${action.target}`],
+            newState: this.world,
+          };
+        }
         player.location = action.target!;
-        changes.push(
-          `Moved to ${this.entityMap.get(action.target!)?.name}`,
-        );
+        changes.push(`Moved to ${targetPlace.name}`);
         break;
+      }
 
-      case "TALK":
-        changes.push(
-          `Had a conversation with ${this.entityMap.get(action.target!)?.name}`,
-        );
+      case "TALK": {
+        const targetPerson = this.entityMap.get(action.target!);
+        if (!targetPerson || targetPerson.type !== "person") {
+          return {
+            success: false,
+            changes: [`Cannot talk to: ${action.target}`],
+            newState: this.world,
+          };
+        }
+        changes.push(`Had a conversation with ${targetPerson.name}`);
         break;
+      }
 
       case "TAKE_ITEM": {
-        const itemToTake = this.entityMap.get(action.target!)!;
+        const itemToTake = this.entityMap.get(action.target!);
+        if (!itemToTake || itemToTake.type !== "item") {
+          return {
+            success: false,
+            changes: [`Invalid item: ${action.target}`],
+            newState: this.world,
+          };
+        }
         itemToTake.location = playerId;
         player.inventory!.push(action.target!);
         changes.push(`Picked up ${itemToTake.name}`);
@@ -235,9 +265,23 @@ export class ActionEngine {
       }
 
       case "DROP_ITEM": {
-        const itemToDrop = this.entityMap.get(action.target!)!;
+        const itemToDrop = this.entityMap.get(action.target!);
+        if (!itemToDrop || itemToDrop.type !== "item") {
+          return {
+            success: false,
+            changes: [`Invalid item: ${action.target}`],
+            newState: this.world,
+          };
+        }
+        if (!player.inventory?.includes(action.target!)) {
+          return {
+            success: false,
+            changes: [`Item not in inventory: ${itemToDrop.name}`],
+            newState: this.world,
+          };
+        }
         itemToDrop.location = player.location!;
-        player.inventory = player.inventory!.filter((id) =>
+        player.inventory = player.inventory.filter((id) =>
           id !== action.target
         );
         changes.push(`Dropped ${itemToDrop.name}`);
@@ -245,7 +289,21 @@ export class ActionEngine {
       }
 
       case "USE_ITEM": {
-        const itemToUse = this.entityMap.get(action.target!)!;
+        const itemToUse = this.entityMap.get(action.target!);
+        if (!itemToUse || itemToUse.type !== "item") {
+          return {
+            success: false,
+            changes: [`Invalid item: ${action.target}`],
+            newState: this.world,
+          };
+        }
+        if (!player.inventory?.includes(action.target!)) {
+          return {
+            success: false,
+            changes: [`Item not in inventory: ${itemToUse.name}`],
+            newState: this.world,
+          };
+        }
         if (itemToUse.effects) {
           if (itemToUse.effects.health) {
             player.health = Math.max(
@@ -275,7 +333,7 @@ export class ActionEngine {
           }
         }
         if (itemToUse.consumable) {
-          player.inventory = player.inventory!.filter((id) =>
+          player.inventory = player.inventory.filter((id) =>
             id !== action.target
           );
           const index = this.world.entities.findIndex((e) =>
@@ -290,11 +348,18 @@ export class ActionEngine {
         break;
       }
 
-      case "EXAMINE":
-        changes.push(
-          `Examined ${this.entityMap.get(action.target!)?.name}`,
-        );
+      case "EXAMINE": {
+        const targetEntity = this.entityMap.get(action.target!);
+        if (!targetEntity) {
+          return {
+            success: false,
+            changes: [`Invalid target: ${action.target}`],
+            newState: this.world,
+          };
+        }
+        changes.push(`Examined ${targetEntity.name}`);
         break;
+      }
 
       case "REST":
         player.energy = Math.min(100, player.energy! + 70);

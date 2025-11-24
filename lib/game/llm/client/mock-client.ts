@@ -2,7 +2,7 @@ import type {
   ILLMClient,
   LLMChatRequest,
   LLMChatResponse,
-} from "./llm-client-interface.ts";
+} from "./interface.ts";
 
 /**
  * Sequential mock LLM client for testing without network calls

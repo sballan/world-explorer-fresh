@@ -1,6 +1,5 @@
 import { define } from "@/utils.ts";
-import { getSessionManager } from "@/lib/game/session.ts";
-
+import { getSessionManager } from "@/lib/game/session/index.ts";
 import { GameService } from "@/lib/game/game-service.ts";
 import type {
   Action,

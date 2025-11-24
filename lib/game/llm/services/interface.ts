@@ -1,4 +1,4 @@
-import type { Action, Entity, World } from "./types.ts";
+import type { Action, Entity, World } from "../../types.ts";
 
 /**
  * Message for LLM conversations

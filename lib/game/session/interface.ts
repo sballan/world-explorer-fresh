@@ -1,4 +1,4 @@
-import type { GameState, SessionData, World } from "./types.ts";
+import type { GameState, SessionData, World } from "../types.ts";
 
 /**
  * Interface for session management

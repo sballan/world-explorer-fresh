@@ -36,5 +36,8 @@ jobs:
       - name: Run linter
         run: deno lint
 
-      # - name: Run tests
-      #   run: deno run test
+      - name: Run tests
+        env:
+          OLLAMA_API_URL: "https://ollama.com"
+          OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
+        run: deno run test:all

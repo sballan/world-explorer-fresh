@@ -13,8 +13,8 @@ import type {
   INarrator,
   IWorldGenerator,
   Message,
-} from "./llm-interfaces.ts";
-import type { ISessionManager } from "./session-interface.ts";
+} from "./llm/services/interface.ts";
+import type { ISessionManager } from "./session/interface.ts";
 import type { Action, Entity, GameState, SessionData, World } from "./types.ts";
 
 /**
