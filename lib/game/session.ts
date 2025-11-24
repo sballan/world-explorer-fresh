@@ -8,7 +8,7 @@ export class SessionManager {
     this.kv = await Deno.openKv();
   }
 
-  async close(): Promise<void> {
+  close(): void {
     if (this.kv) {
       this.kv.close();
     }

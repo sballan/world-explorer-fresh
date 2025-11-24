@@ -1,4 +1,5 @@
 import { useSignal } from "@preact/signals";
+import type { Action, Entity, GameInitResponse } from "@/lib/game/types.ts";
 
 export default function WorldExplorer() {
   const lines = useSignal<Array<{ type: string; text: string }>>([
@@ -11,8 +12,8 @@ export default function WorldExplorer() {
   const input = useSignal("");
   const loading = useSignal(false);
   const gamePhase = useSignal<"init" | "char_select" | "playing">("init");
-  const sessionData = useSignal<any>(null);
-  const availableActions = useSignal<any[]>([]);
+  const sessionData = useSignal<GameInitResponse | null>(null);
+  const availableActions = useSignal<Action[]>([]);
 
   const addLine = (type: string, text: string) => {
     lines.value = [...lines.value, { type, text }];
@@ -71,13 +72,16 @@ export default function WorldExplorer() {
       addLine("system", "");
       addLine("system", "Choose your character:");
 
-      data.availableCharacters.forEach((char: any, i: number) => {
+      data.availableCharacters.forEach((char: Entity, i: number) => {
         addLine("system", `${i + 1}. ${char.name} - ${char.description}`);
       });
 
       gamePhase.value = "char_select";
-    } catch (err: any) {
-      addLine("error", `Error: ${err.message}`);
+    } catch (err: unknown) {
+      addLine(
+        "error",
+        `Error: ${err instanceof Error ? err.message : "Unknown error"}`,
+      );
       addLine("system", "Please try again.");
     } finally {
       loading.value = false;
@@ -105,14 +109,17 @@ export default function WorldExplorer() {
       displayActions();
 
       gamePhase.value = "playing";
-    } catch (err: any) {
-      addLine("error", `Error: ${err.message}`);
+    } catch (err: unknown) {
+      addLine(
+        "error",
+        `Error: ${err instanceof Error ? err.message : "Unknown error"}`,
+      );
     } finally {
       loading.value = false;
     }
   };
 
-  const performAction = async (action: any) => {
+  const performAction = async (action: Action) => {
     loading.value = true;
     addLine("user", `> ${action.description}`);
 
@@ -142,8 +149,11 @@ export default function WorldExplorer() {
         availableActions.value = data.availableActions;
         displayActions();
       }
-    } catch (err: any) {
-      addLine("error", `Error: ${err.message}`);
+    } catch (err: unknown) {
+      addLine(
+        "error",
+        `Error: ${err instanceof Error ? err.message : "Unknown error"}`,
+      );
     } finally {
       loading.value = false;
     }

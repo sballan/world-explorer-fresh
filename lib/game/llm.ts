@@ -304,7 +304,7 @@ export async function generateDiscovery(
   world: World,
   playerId: string,
   messageHistory: Message[],
-): Promise<Entity | null> {
+): Promise<Entity | undefined> {
   const player = world.entities.find((e) => e.id === playerId)!;
   const currentLocation = world.entities.find((e) => e.id === player.location)!;
 
@@ -399,7 +399,7 @@ Return ONLY the JSON object for the single discovered entity.`;
       !discovery.description
     ) {
       console.error("Generated discovery missing required fields");
-      return null;
+      return undefined;
     }
 
     // If it's a new place, we need to also update the current location's connections
@@ -413,6 +413,6 @@ Return ONLY the JSON object for the single discovered entity.`;
     return discovery;
   } catch (error) {
     console.error("Failed to generate discovery:", error);
-    return null;
+    return undefined;
   }
 }

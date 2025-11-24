@@ -3,7 +3,6 @@ import { getSessionManager } from "@/lib/game/session.ts";
 import { ActionEngine } from "@/lib/game/engine.ts";
 import {
   generateDiscovery,
-  type Message,
   narrateAction,
   selectInterestingActions,
 } from "@/lib/game/llm.ts";
@@ -77,7 +76,7 @@ export const handler = define.handlers({
       const result = engine.executeAction(playerId, action);
 
       // Handle EXPLORE action - generate discovery
-      let discovery = null;
+      let discovery = undefined;
       if (action.type === "EXPLORE") {
         discovery = await generateDiscovery(
           world,
