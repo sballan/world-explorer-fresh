@@ -64,8 +64,9 @@ export class ActionEngine {
             !player.inventory?.includes(connection.requires_item)
           ) {
             const requiredItem = this.entityMap.get(connection.requires_item);
-            requirements =
-              ` (requires ${requiredItem?.name || connection.requires_item})`;
+            requirements = ` (requires ${
+              requiredItem?.name || connection.requires_item
+            })`;
             canMove = false;
           }
 
@@ -221,9 +222,7 @@ export class ActionEngine {
 
       case "TALK":
         changes.push(
-          `Had a conversation with ${
-            this.entityMap.get(action.target!)?.name
-          }`,
+          `Had a conversation with ${this.entityMap.get(action.target!)?.name}`,
         );
         break;
 
@@ -256,9 +255,9 @@ export class ActionEngine {
             changes.push(
               `Health ${
                 itemToUse.effects.health > 0 ? "increased" : "decreased"
-              } by ${Math.abs(itemToUse.effects.health)} (now ${
-                player.health
-              })`,
+              } by ${
+                Math.abs(itemToUse.effects.health)
+              } (now ${player.health})`,
             );
           }
           if (itemToUse.effects.energy) {
@@ -269,9 +268,9 @@ export class ActionEngine {
             changes.push(
               `Energy ${
                 itemToUse.effects.energy > 0 ? "increased" : "decreased"
-              } by ${Math.abs(itemToUse.effects.energy)} (now ${
-                player.energy
-              })`,
+              } by ${
+                Math.abs(itemToUse.effects.energy)
+              } (now ${player.energy})`,
             );
           }
         }

@@ -2,12 +2,16 @@ import { define } from "@/utils.ts";
 import { getSessionManager } from "@/lib/game/session.ts";
 import { ActionEngine } from "@/lib/game/engine.ts";
 import {
-  narrateAction,
-  selectInterestingActions,
   generateDiscovery,
   type Message,
+  narrateAction,
+  selectInterestingActions,
 } from "@/lib/game/llm.ts";
-import type { Action, GameActionResponse, ErrorResponse } from "@/lib/game/types.ts";
+import type {
+  Action,
+  ErrorResponse,
+  GameActionResponse,
+} from "@/lib/game/types.ts";
 
 export const handler = define.handlers({
   async POST(ctx) {

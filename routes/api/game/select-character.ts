@@ -1,8 +1,8 @@
 import { define } from "@/utils.ts";
 import { getSessionManager } from "@/lib/game/session.ts";
 import { ActionEngine } from "@/lib/game/engine.ts";
-import { selectInterestingActions, type Message } from "@/lib/game/llm.ts";
-import type { GameState, ErrorResponse } from "@/lib/game/types.ts";
+import { type Message, selectInterestingActions } from "@/lib/game/llm.ts";
+import type { ErrorResponse, GameState } from "@/lib/game/types.ts";
 
 export const handler = define.handlers({
   async POST(ctx) {
@@ -86,7 +86,8 @@ export const handler = define.handlers({
       const messageHistory: Message[] = [
         {
           role: "system",
-          content: `You are the narrator for an interactive text adventure game set in: ${world.world_description}`,
+          content:
+            `You are the narrator for an interactive text adventure game set in: ${world.world_description}`,
         },
       ];
 

@@ -1,7 +1,9 @@
-import type { World, Entity } from "./types.ts";
+import type { Entity, World } from "./types.ts";
 
 // Validation function for world structure
-export function validateWorld(world: World): { valid: boolean; errors: string[] } {
+export function validateWorld(
+  world: World,
+): { valid: boolean; errors: string[] } {
   const errors: string[] = [];
 
   // Check for required fields
