@@ -323,13 +323,17 @@ Deno.test("ActionEngine.executeAction - MOVE changes player location", () => {
     energyCost: 5,
   };
 
-  const result = engine.executeAction("player", action);
-  const player = world.entities.find((e) => e.id === "player")!;
+  const result = engine.executeAction("player", action, 1);
+  // Note: With transaction pattern, original world is NOT mutated
+  // Check the returned world instead
+  const originalPlayer = world.entities.find((e) => e.id === "player")!;
+  const newPlayer = result.world.entities.find((e) => e.id === "player")!;
 
   assertEquals(result.success, true);
-  assertEquals(player.location, "forest");
-  assertEquals(player.energy, 95);
-  assertEquals(result.changes.some((c) => c.includes("Moved to")), true);
+  assertEquals(originalPlayer.location, "tavern"); // Original unchanged
+  assertEquals(newPlayer.location, "forest"); // New world has changes
+  assertEquals(newPlayer.energy, 95);
+  assertEquals(result.changes.some((c) => c.includes("Moved")), true);
 });
 
 Deno.test("ActionEngine.executeAction - TALK records conversation", () => {
@@ -342,7 +346,7 @@ Deno.test("ActionEngine.executeAction - TALK records conversation", () => {
     energyCost: 3,
   };
 
-  const result = engine.executeAction("player", action);
+  const result = engine.executeAction("player", action, 1);
 
   assertEquals(result.success, true);
   assertEquals(
@@ -361,13 +365,13 @@ Deno.test("ActionEngine.executeAction - TAKE_ITEM moves item to inventory", () =
     energyCost: 0,
   };
 
-  const result = engine.executeAction("player", action);
-  const player = world.entities.find((e) => e.id === "player")!;
-  const potion = world.entities.find((e) => e.id === "potion")!;
+  const result = engine.executeAction("player", action, 1);
+  const newPlayer = result.world.entities.find((e) => e.id === "player")!;
+  const newPotion = result.world.entities.find((e) => e.id === "potion")!;
 
   assertEquals(result.success, true);
-  assertEquals(player.inventory?.includes("potion"), true);
-  assertEquals(potion.location, "player");
+  assertEquals(newPlayer.inventory?.includes("potion"), true);
+  assertEquals(newPotion.location, "player");
 });
 
 Deno.test("ActionEngine.executeAction - DROP_ITEM moves item to location", () => {
@@ -385,11 +389,13 @@ Deno.test("ActionEngine.executeAction - DROP_ITEM moves item to location", () =>
     energyCost: 0,
   };
 
-  const result = engine.executeAction("player", action);
+  const result = engine.executeAction("player", action, 1);
+  const newPlayer = result.world.entities.find((e) => e.id === "player")!;
+  const newPotion = result.world.entities.find((e) => e.id === "potion")!;
 
   assertEquals(result.success, true);
-  assertEquals(player.inventory?.includes("potion"), false);
-  assertEquals(potion.location, "tavern");
+  assertEquals(newPlayer.inventory?.includes("potion"), false);
+  assertEquals(newPotion.location, "tavern");
 });
 
 Deno.test("ActionEngine.executeAction - USE_ITEM applies health effect", () => {
@@ -406,10 +412,11 @@ Deno.test("ActionEngine.executeAction - USE_ITEM applies health effect", () => {
     energyCost: 0,
   };
 
-  const result = engine.executeAction("player", action);
+  const result = engine.executeAction("player", action, 1);
+  const newPlayer = result.world.entities.find((e) => e.id === "player")!;
 
   assertEquals(result.success, true);
-  assertEquals(player.health, 80); // 50 + 30
+  assertEquals(newPlayer.health, 80); // 50 + 30
   assertEquals(
     result.changes.some((c) => c.includes("Health increased")),
     true,
@@ -430,9 +437,10 @@ Deno.test("ActionEngine.executeAction - USE_ITEM caps health at 100", () => {
     energyCost: 0,
   };
 
-  engine.executeAction("player", action);
+  const result = engine.executeAction("player", action, 1);
+  const newPlayer = result.world.entities.find((e) => e.id === "player")!;
 
-  assertEquals(player.health, 100); // Capped at 100, not 120
+  assertEquals(newPlayer.health, 100); // Capped at 100, not 120
 });
 
 Deno.test("ActionEngine.executeAction - USE_ITEM removes consumable from world", () => {
@@ -448,10 +456,12 @@ Deno.test("ActionEngine.executeAction - USE_ITEM removes consumable from world",
     energyCost: 0,
   };
 
-  engine.executeAction("player", action);
+  const result = engine.executeAction("player", action, 1);
+  const newPlayer = result.world.entities.find((e) => e.id === "player")!;
 
-  assertEquals(player.inventory?.includes("potion"), false);
-  assertEquals(world.entities.find((e) => e.id === "potion"), undefined);
+  assertEquals(newPlayer.inventory?.includes("potion"), false);
+  assertEquals(result.world.entities.find((e) => e.id === "potion"), undefined);
+  // After commit, engine is updated with new world - potion should be gone
   assertEquals(engine.getEntity("potion"), undefined);
 });
 
@@ -469,11 +479,12 @@ Deno.test("ActionEngine.executeAction - USE_ITEM keeps non-consumable in invento
     energyCost: 0,
   };
 
-  engine.executeAction("player", action);
+  const result = engine.executeAction("player", action, 1);
+  const newPlayer = result.world.entities.find((e) => e.id === "player")!;
 
-  assertEquals(player.inventory?.includes("sword"), true);
+  assertEquals(newPlayer.inventory?.includes("sword"), true);
   assertEquals(
-    world.entities.find((e) => e.id === "sword") !== undefined,
+    result.world.entities.find((e) => e.id === "sword") !== undefined,
     true,
   );
 });
@@ -491,10 +502,11 @@ Deno.test("ActionEngine.executeAction - USE_ITEM applies negative effects", () =
     energyCost: 0,
   };
 
-  engine.executeAction("player", action);
+  const result = engine.executeAction("player", action, 1);
+  const newPlayer = result.world.entities.find((e) => e.id === "player")!;
 
-  assertEquals(player.health, 90); // 100 - 10
-  assertEquals(player.energy, 95); // 100 - 5
+  assertEquals(newPlayer.health, 90); // 100 - 10
+  assertEquals(newPlayer.energy, 95); // 100 - 5
 });
 
 Deno.test("ActionEngine.executeAction - USE_ITEM health doesn't go below 0", () => {
@@ -511,9 +523,10 @@ Deno.test("ActionEngine.executeAction - USE_ITEM health doesn't go below 0", () 
     energyCost: 0,
   };
 
-  engine.executeAction("player", action);
+  const result = engine.executeAction("player", action, 1);
+  const newPlayer = result.world.entities.find((e) => e.id === "player")!;
 
-  assertEquals(player.health, 0); // Capped at 0, not -5
+  assertEquals(newPlayer.health, 0); // Capped at 0, not -5
 });
 
 Deno.test("ActionEngine.executeAction - REST recovers 70 energy", () => {
@@ -528,10 +541,11 @@ Deno.test("ActionEngine.executeAction - REST recovers 70 energy", () => {
     energyCost: 0,
   };
 
-  const result = engine.executeAction("player", action);
+  const result = engine.executeAction("player", action, 1);
+  const newPlayer = result.world.entities.find((e) => e.id === "player")!;
 
   assertEquals(result.success, true);
-  assertEquals(player.energy, 90); // 20 + 70
+  assertEquals(newPlayer.energy, 90); // 20 + 70
 });
 
 Deno.test("ActionEngine.executeAction - REST caps energy at 100", () => {
@@ -546,9 +560,10 @@ Deno.test("ActionEngine.executeAction - REST caps energy at 100", () => {
     energyCost: 0,
   };
 
-  engine.executeAction("player", action);
+  const result = engine.executeAction("player", action, 1);
+  const newPlayer = result.world.entities.find((e) => e.id === "player")!;
 
-  assertEquals(player.energy, 100); // Capped at 100, not 120
+  assertEquals(newPlayer.energy, 100); // Capped at 100, not 120
 });
 
 Deno.test("ActionEngine.executeAction - WAIT just passes time", () => {
@@ -560,10 +575,11 @@ Deno.test("ActionEngine.executeAction - WAIT just passes time", () => {
     energyCost: 0,
   };
 
-  const result = engine.executeAction("player", action);
+  const result = engine.executeAction("player", action, 1);
 
   assertEquals(result.success, true);
-  assertEquals(result.changes.some((c) => c.includes("Time passes")), true);
+  // Note: WAIT doesn't produce changes in transactional model
+  assertEquals(result.changes.length, 0);
 });
 
 Deno.test("ActionEngine.executeAction - EXPLORE returns exploration message", () => {
@@ -575,12 +591,13 @@ Deno.test("ActionEngine.executeAction - EXPLORE returns exploration message", ()
     energyCost: 4,
   };
 
-  const result = engine.executeAction("player", action);
-  const player = world.entities.find((e) => e.id === "player")!;
+  const result = engine.executeAction("player", action, 1);
+  const newPlayer = result.world.entities.find((e) => e.id === "player")!;
 
   assertEquals(result.success, true);
-  assertEquals(player.energy, 96); // 100 - 4
-  assertEquals(result.changes.some((c) => c.includes("explore")), true);
+  assertEquals(newPlayer.energy, 96); // 100 - 4
+  // EXPLORE just reduces energy, discovery handled externally
+  assertEquals(result.changes.some((c) => c.includes("Energy")), true);
 });
 
 Deno.test("ActionEngine.executeAction - EXAMINE records examination", () => {
@@ -593,7 +610,7 @@ Deno.test("ActionEngine.executeAction - EXAMINE records examination", () => {
     energyCost: 1,
   };
 
-  const result = engine.executeAction("player", action);
+  const result = engine.executeAction("player", action, 1);
 
   assertEquals(result.success, true);
   assertEquals(result.changes.some((c) => c.includes("Examined")), true);
@@ -672,11 +689,14 @@ Deno.test("ActionEngine.executeAction - rejects MOVE to non-existent location", 
     energyCost: 5,
   };
 
-  const result = engine.executeAction("player", action);
-  const player = world.entities.find((e) => e.id === "player")!;
+  const result = engine.executeAction("player", action, 1);
+  const player = result.world.entities.find((e) => e.id === "player")!;
 
   assertEquals(result.success, false);
-  assertEquals(result.changes[0], "Invalid destination: nonexistent_place");
+  assertEquals(
+    result.error,
+    "Cannot move to nonexistent_place: not connected.",
+  );
   // Player location unchanged
   assertEquals(player.location, "tavern");
 });
@@ -694,10 +714,12 @@ Deno.test("ActionEngine.executeAction - rejects USE_ITEM for non-existent item",
     energyCost: 0,
   };
 
-  const result = engine.executeAction("player", action);
+  const result = engine.executeAction("player", action, 1);
 
   assertEquals(result.success, false);
-  assertEquals(result.changes[0], "Invalid item: ghost_item");
+  // The ghost_item is in inventory array, so validation passes, but
+  // when we try to get the item from the world, it throws an error
+  assertEquals(result.error, `Invalid item: "ghost_item"`);
 });
 
 Deno.test("ActionEngine.executeAction - rejects USE_ITEM when item not in inventory", () => {
@@ -713,16 +735,16 @@ Deno.test("ActionEngine.executeAction - rejects USE_ITEM when item not in invent
     energyCost: 0,
   };
 
-  const result = engine.executeAction("player", action);
+  const result = engine.executeAction("player", action, 1);
 
   assertEquals(result.success, false);
-  assertEquals(result.changes[0], "Item not in inventory: Health Potion");
+  assertEquals(result.error, "Cannot use item: not in inventory.");
 });
 
 Deno.test("ActionEngine.executeAction - energy can go to zero from action cost", () => {
   const world = createTestWorld();
   const player = world.entities.find((e) => e.id === "player")!;
-  player.energy = 3;
+  player.energy = 4; // Exactly enough energy
 
   const engine = new ActionEngine(world);
   const action: Action = {
@@ -731,10 +753,29 @@ Deno.test("ActionEngine.executeAction - energy can go to zero from action cost",
     energyCost: 4,
   };
 
-  const result = engine.executeAction("player", action);
+  const result = engine.executeAction("player", action, 1);
+  const newPlayer = result.world.entities.find((e) => e.id === "player")!;
 
   assertEquals(result.success, true);
-  assertEquals(player.energy, 0); // 3 - 4 = -1, capped at 0
+  assertEquals(newPlayer.energy, 0); // 4 - 4 = 0
+});
+
+Deno.test("ActionEngine.executeAction - rejects action when energy insufficient", () => {
+  const world = createTestWorld();
+  const player = world.entities.find((e) => e.id === "player")!;
+  player.energy = 3; // Less than required
+
+  const engine = new ActionEngine(world);
+  const action: Action = {
+    type: "EXPLORE",
+    description: "Explore",
+    energyCost: 4,
+  };
+
+  const result = engine.executeAction("player", action, 1);
+
+  assertEquals(result.success, false);
+  assertEquals(result.error, "Not enough energy. Need 4, have 3.");
 });
 
 Deno.test("ActionEngine.executeAction - large energy cost doesn't go negative", () => {
@@ -750,10 +791,12 @@ Deno.test("ActionEngine.executeAction - large energy cost doesn't go negative", 
     energyCost: 100, // Way more than player has
   };
 
-  const result = engine.executeAction("player", action);
+  const result = engine.executeAction("player", action, 1);
+  const newPlayer = result.world.entities.find((e) => e.id === "player")!;
 
-  assertEquals(result.success, true);
-  assertEquals(player.energy, 0); // Capped at 0, not -95
+  // With transaction validation, this now fails because not enough energy
+  assertEquals(result.success, false);
+  assertEquals(result.error, "Not enough energy. Need 100, have 5.");
 });
 
 Deno.test("ActionEngine.generateValidActions - handles player with invalid location", () => {
@@ -781,11 +824,11 @@ Deno.test("ActionEngine.executeAction - rejects DROP_ITEM when item not in inven
     energyCost: 0,
   };
 
-  const result = engine.executeAction("player", action);
-  const potion = world.entities.find((e) => e.id === "potion")!;
+  const result = engine.executeAction("player", action, 1);
+  const potion = result.world.entities.find((e) => e.id === "potion")!;
 
   assertEquals(result.success, false);
-  assertEquals(result.changes[0], "Item not in inventory: Health Potion");
+  assertEquals(result.error, "Cannot drop item: not in inventory.");
   // Item location unchanged
   assertEquals(potion.location, "tavern");
 });
@@ -800,10 +843,10 @@ Deno.test("ActionEngine.executeAction - rejects TALK to non-person", () => {
     energyCost: 3,
   };
 
-  const result = engine.executeAction("player", action);
+  const result = engine.executeAction("player", action, 1);
 
   assertEquals(result.success, false);
-  assertEquals(result.changes[0], "Cannot talk to: tavern");
+  assertEquals(result.error, "Cannot talk to: invalid target.");
 });
 
 Deno.test("ActionEngine.executeAction - rejects EXAMINE of non-existent target", () => {
@@ -816,10 +859,10 @@ Deno.test("ActionEngine.executeAction - rejects EXAMINE of non-existent target",
     energyCost: 1,
   };
 
-  const result = engine.executeAction("player", action);
+  const result = engine.executeAction("player", action, 1);
 
   assertEquals(result.success, false);
-  assertEquals(result.changes[0], "Invalid target: nonexistent");
+  assertEquals(result.error, "Cannot examine: invalid target.");
 });
 
 Deno.test("ActionEngine.executeAction - rejects action for invalid player", () => {
@@ -831,10 +874,10 @@ Deno.test("ActionEngine.executeAction - rejects action for invalid player", () =
     energyCost: 0,
   };
 
-  const result = engine.executeAction("nonexistent_player", action);
+  const result = engine.executeAction("nonexistent_player", action, 1);
 
   assertEquals(result.success, false);
-  assertEquals(result.changes[0], "Invalid player");
+  assertEquals(result.error, "Invalid player");
 });
 
 Deno.test("ActionEngine.executeAction - rejects TAKE_ITEM for non-item", () => {
@@ -847,8 +890,8 @@ Deno.test("ActionEngine.executeAction - rejects TAKE_ITEM for non-item", () => {
     energyCost: 0,
   };
 
-  const result = engine.executeAction("player", action);
+  const result = engine.executeAction("player", action, 1);
 
   assertEquals(result.success, false);
-  assertEquals(result.changes[0], "Invalid item: npc");
+  assertEquals(result.error, "Cannot take item: not available.");
 });

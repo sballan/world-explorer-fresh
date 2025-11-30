@@ -105,3 +105,93 @@ export interface ErrorResponse {
   error: string;
   message: string;
 }
+
+// Message type for LLM interactions
+export interface Message {
+  role: "system" | "user" | "assistant";
+  content: string;
+}
+
+// State Transaction Types (Phase 0.1)
+
+/**
+ * Represents a single atomic change to an entity's state.
+ * Used for tracking, rollback, and narration.
+ */
+export interface StateChange {
+  /** Unique ID for this change */
+  id: string;
+
+  /** The entity being modified */
+  entityId: string;
+
+  /** The field being changed (supports dot notation for nested fields) */
+  field: string;
+
+  /** Value before the change */
+  oldValue: unknown;
+
+  /** Value after the change */
+  newValue: unknown;
+
+  /** Turn number when this change occurred */
+  turn: number;
+
+  /** Human-readable description for narration */
+  description: string;
+}
+
+/**
+ * A snapshot of the complete world state at a point in time.
+ * Used for rollback and scene boundary captures.
+ */
+export interface WorldSnapshot {
+  /** When this snapshot was taken */
+  timestamp: number;
+
+  /** Turn number at snapshot time */
+  turn: number;
+
+  /** Deep copy of world state */
+  world: World;
+
+  /** Optional label (e.g., "scene_start", "pre_action") */
+  label?: string;
+}
+
+/**
+ * Represents a pending set of changes that can be committed or rolled back.
+ */
+export interface StateTransaction {
+  /** Unique transaction ID */
+  id: string;
+
+  /** Snapshot taken before transaction started */
+  preSnapshot: WorldSnapshot;
+
+  /** Accumulated changes in this transaction */
+  changes: StateChange[];
+
+  /** Whether transaction has been committed */
+  committed: boolean;
+
+  /** Whether transaction has been rolled back */
+  rolledBack: boolean;
+}
+
+/**
+ * Result of executing an action through the ActionEngine.
+ */
+export interface ActionResult {
+  /** Whether the action succeeded */
+  success: boolean;
+
+  /** The world state after the action (or unchanged if failed) */
+  world: World;
+
+  /** Human-readable descriptions of changes for narration */
+  changes: string[];
+
+  /** Error message if action failed */
+  error?: string;
+}
