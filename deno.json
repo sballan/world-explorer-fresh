@@ -5,7 +5,10 @@
     "dev": "vite",
     "build": "vite build",
     "start": "deno serve -A _fresh/server.js",
-    "update": "deno run -A -r jsr:@fresh/update ."
+    "update": "deno run -A -r jsr:@fresh/update .",
+    "test": "deno test",
+    "test:integration": "deno test --env --allow-net --allow-read --allow-env **/*.integration.test.ts",
+    "test:all": "deno test --env --allow-net --allow-read --allow-env --ignore=_fresh"
   },
   "lint": {
     "rules": {
@@ -64,5 +67,11 @@
   "deploy": {
     "org": "sballan",
     "app": "world-explorer-fresh"
+  },
+  "test": {
+    "exclude": [
+      "**/*.integration.test.ts",
+      "_fresh"
+    ]
   }
 }

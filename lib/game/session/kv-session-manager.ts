@@ -1,7 +1,12 @@
-import type { GameState, SessionData, World } from "./types.ts";
+/// <reference lib="deno.unstable" />
 
-// Session management using Deno KV
-export class SessionManager {
+import type { GameState, SessionData, World } from "../types.ts";
+import type { ISessionManager } from "./interface.ts";
+
+/**
+ * Session management using Deno KV
+ */
+export class KvSessionManager implements ISessionManager {
   private kv: Deno.Kv | null = null;
 
   async init(): Promise<void> {
@@ -14,13 +19,11 @@ export class SessionManager {
     }
   }
 
-  // Generate a session ID (simple UUID-like string)
-  generateSessionId(): string {
+  private generateSessionId(): string {
     return crypto.randomUUID();
   }
 
-  // Store session data
-  async saveSession(sessionData: SessionData): Promise<void> {
+  private async saveSession(sessionData: SessionData): Promise<void> {
     if (!this.kv) throw new Error("KV store not initialized");
 
     // Update last activity timestamp
@@ -35,7 +38,6 @@ export class SessionManager {
     );
   }
 
-  // Get session data
   async getSession(sessionId: string): Promise<SessionData | null> {
     if (!this.kv) throw new Error("KV store not initialized");
 
@@ -57,7 +59,6 @@ export class SessionManager {
     return entry.value;
   }
 
-  // Create a new session
   async createSession(worldDescription: string): Promise<SessionData> {
     const sessionId = this.generateSessionId();
     const sessionData: SessionData = {
@@ -74,7 +75,6 @@ export class SessionManager {
     return sessionData;
   }
 
-  // Update session with generated world
   async updateWorld(sessionId: string, world: World): Promise<boolean> {
     const session = await this.getSession(sessionId);
     if (!session) return false;
@@ -84,8 +84,10 @@ export class SessionManager {
     return true;
   }
 
-  // Update session with opening scene
-  async updateOpeningScene(sessionId: string, scene: string): Promise<boolean> {
+  async updateOpeningScene(
+    sessionId: string,
+    scene: string,
+  ): Promise<boolean> {
     const session = await this.getSession(sessionId);
     if (!session) return false;
 
@@ -94,7 +96,6 @@ export class SessionManager {
     return true;
   }
 
-  // Update game state after an action
   async updateGameState(
     sessionId: string,
     gameState: GameState,
@@ -108,13 +109,11 @@ export class SessionManager {
     return true;
   }
 
-  // Delete a session
   async deleteSession(sessionId: string): Promise<void> {
     if (!this.kv) throw new Error("KV store not initialized");
     await this.kv.delete(["sessions", sessionId]);
   }
 
-  // Clean up old sessions (call periodically)
   async cleanupOldSessions(): Promise<number> {
     if (!this.kv) throw new Error("KV store not initialized");
 
@@ -139,11 +138,11 @@ export class SessionManager {
 }
 
 // Global session manager instance
-let sessionManager: SessionManager | null = null;
+let sessionManager: KvSessionManager | null = null;
 
-export async function getSessionManager(): Promise<SessionManager> {
+export async function getSessionManager(): Promise<KvSessionManager> {
   if (!sessionManager) {
-    sessionManager = new SessionManager();
+    sessionManager = new KvSessionManager();
     await sessionManager.init();
   }
   return sessionManager;
