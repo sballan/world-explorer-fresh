@@ -2,7 +2,9 @@
 
 > **Deno Style Guide Compliance**
 >
-> This document follows [Deno's official style guide](https://docs.deno.com/runtime/contributing/style_guide/):
+> This document follows
+> [Deno's official style guide](https://docs.deno.com/runtime/contributing/style_guide/):
+>
 > - **`mod.ts`** instead of `index.ts` for module entry points
 > - **`snake_case`** for filenames (e.g., `scene_manager.ts`)
 > - **`*_test.ts`** suffix for test files (e.g., `scene_test.ts`)

@@ -1,12 +1,14 @@
 # Deno Style Guide for This Project
 
-This project follows the [official Deno Style Guide](https://docs.deno.com/runtime/contributing/style_guide/).
+This project follows the
+[official Deno Style Guide](https://docs.deno.com/runtime/contributing/style_guide/).
 
 ## File Naming Conventions
 
 ### Use `mod.ts` Instead of `index.ts`
 
-Deno does not treat `index.ts` or `index.js` specially. Use `mod.ts` as the default entry point for directories:
+Deno does not treat `index.ts` or `index.js` specially. Use `mod.ts` as the
+default entry point for directories:
 
 ```
 # Good
@@ -89,7 +91,7 @@ export function process(data: string, options?: ProcessOptions): void {
 // Bad - inline interface not exported
 export function process(
   data: string,
-  options?: { timeout?: number; retries?: number }
+  options?: { timeout?: number; retries?: number },
 ): void {
   // ...
 }
@@ -101,7 +103,7 @@ export function process(
 // Good
 export function createSession(
   worldDescription: string,
-  options?: { ttl?: number; metadata?: Record<string, unknown> }
+  options?: { ttl?: number; metadata?: Record<string, unknown> },
 ): Session {
   // ...
 }
@@ -111,7 +113,7 @@ export function createSession(
   worldDescription: string,
   ttl: number,
   metadata: Record<string, unknown>,
-  validate: boolean
+  validate: boolean,
 ): Session {
   // ...
 }
@@ -134,7 +136,8 @@ export class TransactionManager {
 }
 ```
 
-Use single-line JSDoc when possible. Avoid `@param` tags unless parameters are non-obvious.
+Use single-line JSDoc when possible. Avoid `@param` tags unless parameters are
+non-obvious.
 
 ## Module Organization
 
@@ -188,31 +191,32 @@ lib/game/_testing/
 ```
 
 **Rule of thumb:**
+
 - **Colocate** if it implements an interface from that module
 - **Centralize** if it's pure test infrastructure (builders, fixtures, helpers)
 
 ## Naming Conventions
 
-| Type | Convention | Example |
-|------|------------|---------|
-| Files | `snake_case` | `game_service.ts` |
-| Functions/Variables | `camelCase` | `calculateEnergy()` |
-| Classes/Types | `PascalCase` | `TransactionManager` |
-| Constants | `UPPER_SNAKE_CASE` | `MAX_RETRIES` |
-| Interfaces | `PascalCase` with `I` prefix (optional) | `ISessionManager` or `SessionManager` |
+| Type                | Convention                              | Example                               |
+| ------------------- | --------------------------------------- | ------------------------------------- |
+| Files               | `snake_case`                            | `game_service.ts`                     |
+| Functions/Variables | `camelCase`                             | `calculateEnergy()`                   |
+| Classes/Types       | `PascalCase`                            | `TransactionManager`                  |
+| Constants           | `UPPER_SNAKE_CASE`                      | `MAX_RETRIES`                         |
+| Interfaces          | `PascalCase` with `I` prefix (optional) | `ISessionManager` or `SessionManager` |
 
 ### Acronyms Follow Case Convention
 
 ```typescript
 // Good
-HttpServer
-JsonParser
-UuidGenerator
+HttpServer;
+JsonParser;
+UuidGenerator;
 
 // Bad
-HTTPServer
-JSONParser
-UUIDGenerator
+HTTPServer;
+JSONParser;
+UUIDGenerator;
 ```
 
 ## Error Messages
@@ -228,7 +232,9 @@ throw new Error("Cannot start transaction: existing transaction not completed");
 
 // Bad
 throw new Error("ENTITY NOT FOUND.");
-throw new Error(`The entity with id ${entityId} could not be located in the system.`);
+throw new Error(
+  `The entity with id ${entityId} could not be located in the system.`,
+);
 ```
 
 ## TODO Comments

@@ -2,7 +2,9 @@
 
 > **Deno Style Guide Compliance**
 >
-> This document follows [Deno's official style guide](https://docs.deno.com/runtime/contributing/style_guide/):
+> This document follows
+> [Deno's official style guide](https://docs.deno.com/runtime/contributing/style_guide/):
+>
 > - **`mod.ts`** instead of `index.ts` for module entry points
 > - **`snake_case`** for filenames (e.g., `kv_session_manager.ts`)
 > - **`*_test.ts`** suffix for test files (e.g., `transaction_test.ts`)
@@ -11,8 +13,9 @@
 > - **JSDoc** on all exported symbols
 > - **Max 2 required args** plus optional options object for exported functions
 >
-> Note: The existing codebase uses some non-Deno conventions (e.g., `index.ts`, `*.test.ts`).
-> When implementing this plan, you may choose to:
+> Note: The existing codebase uses some non-Deno conventions (e.g., `index.ts`,
+> `*.test.ts`). When implementing this plan, you may choose to:
+>
 > 1. Follow existing conventions for consistency with current code
 > 2. Migrate to Deno conventions as part of the refactor
 >
@@ -20,7 +23,11 @@
 
 ## Overview
 
-This document describes the preparatory work required before implementing the scene/day context management architecture described in `251129_CONTEXT_MANAGEMENT_DESIGN.md`. The current codebase has several architectural weaknesses that would make the scene/day implementation fragile, difficult to test, and prone to bugs.
+This document describes the preparatory work required before implementing the
+scene/day context management architecture described in
+`251129_CONTEXT_MANAGEMENT_DESIGN.md`. The current codebase has several
+architectural weaknesses that would make the scene/day implementation fragile,
+difficult to test, and prone to bugs.
 
 **This plan should be executed BEFORE the scene/day implementation.**
 
@@ -30,20 +37,21 @@ This document describes the preparatory work required before implementing the sc
 
 ### Critical Issues Identified
 
-| Issue | Location | Impact on Scene/Day Architecture |
-|-------|----------|----------------------------------|
-| Direct state mutation | `engine.ts:200-388` | Cannot snapshot state at scene boundaries |
-| No rollback capability | `engine.ts`, `game-service.ts` | Cannot recover from failed LLM calls mid-action |
-| 24-hour session TTL | `kv-session-manager.ts:33` | Long-running games will lose all progress |
-| TTL not extended on activity | `kv-session-manager.ts` | Active games still expire |
-| Duplicated context extraction | All LLM services | Cannot build scene-aware context consistently |
-| No token counting | Entire codebase | Cannot implement energy-as-tokens mechanic |
-| Duplicated cookie parsing | Route handlers | Will get worse with more endpoints |
-| Duplicated test utilities | Test files | Cannot efficiently test new systems |
+| Issue                         | Location                       | Impact on Scene/Day Architecture                |
+| ----------------------------- | ------------------------------ | ----------------------------------------------- |
+| Direct state mutation         | `engine.ts:200-388`            | Cannot snapshot state at scene boundaries       |
+| No rollback capability        | `engine.ts`, `game-service.ts` | Cannot recover from failed LLM calls mid-action |
+| 24-hour session TTL           | `kv-session-manager.ts:33`     | Long-running games will lose all progress       |
+| TTL not extended on activity  | `kv-session-manager.ts`        | Active games still expire                       |
+| Duplicated context extraction | All LLM services               | Cannot build scene-aware context consistently   |
+| No token counting             | Entire codebase                | Cannot implement energy-as-tokens mechanic      |
+| Duplicated cookie parsing     | Route handlers                 | Will get worse with more endpoints              |
+| Duplicated test utilities     | Test files                     | Cannot efficiently test new systems             |
 
 ### Files That Will Be Modified
 
 > **Deno Conventions Note**: This project follows Deno style guide conventions:
+>
 > - Use `mod.ts` instead of `index.ts` for module entry points
 > - Use `snake_case` for filenames (e.g., `kv_session_manager.ts`)
 > - Test files use `*_test.ts` suffix (e.g., `transaction_test.ts`)
@@ -104,13 +112,14 @@ routes/api/game/
 
 > **Mock Organization Strategy (Hybrid Approach)**
 >
-> | Type | Location | Rationale |
-> |------|----------|-----------|
+> | Type                                                   | Location                 | Rationale                                  |
+> | ------------------------------------------------------ | ------------------------ | ------------------------------------------ |
 > | Interface implementations (e.g., `MockSessionManager`) | Colocated with interface | Valid implementation, exported from module |
-> | Test data builders (e.g., `TestWorldBuilder`) | Centralized `_testing/` | Shared across many test files |
+> | Test data builders (e.g., `TestWorldBuilder`)          | Centralized `_testing/`  | Shared across many test files              |
 >
 > **Colocate mocks if** they implement an interface from that module.
-> **Centralize utilities if** they're pure test infrastructure (builders, fixtures).
+> **Centralize utilities if** they're pure test infrastructure (builders,
+> fixtures).
 
 ---
 
@@ -118,17 +127,19 @@ routes/api/game/
 
 ### Problem Statement
 
-The current `ActionEngine.executeAction()` method directly mutates entity objects:
+The current `ActionEngine.executeAction()` method directly mutates entity
+objects:
 
 ```typescript
 // Current pattern in engine.ts (PROBLEMATIC)
 player.energy = Math.max(0, player.energy! - action.energyCost);
 player.location = action.target!;
 player.inventory!.push(action.target!);
-this.world.entities.splice(index, 1);  // Destroys consumables
+this.world.entities.splice(index, 1); // Destroys consumables
 ```
 
 This creates several problems:
+
 1. **No snapshots**: Cannot capture world state at a point in time
 2. **No rollback**: If narration fails after mutation, state is corrupted
 3. **No change tracking**: `changes[]` array is just strings for narration
@@ -137,6 +148,7 @@ This creates several problems:
 ### Solution: Transaction Pattern
 
 Introduce a transaction-based state update pattern where:
+
 1. Changes are computed but not applied
 2. Changes are validated
 3. Changes are applied atomically
@@ -216,7 +228,13 @@ export interface StateTransaction {
 ### New Module: `lib/game/state/transaction.ts`
 
 ```typescript
-import { World, Entity, StateChange, StateTransaction, WorldSnapshot } from "../types.ts";
+import {
+  Entity,
+  StateChange,
+  StateTransaction,
+  World,
+  WorldSnapshot,
+} from "../types.ts";
 
 /**
  * Creates a deep copy of a world object.
@@ -229,7 +247,11 @@ export function cloneWorld(world: World): World {
 /**
  * Creates a snapshot of the current world state.
  */
-export function createSnapshot(world: World, turn: number, label?: string): WorldSnapshot {
+export function createSnapshot(
+  world: World,
+  turn: number,
+  label?: string,
+): WorldSnapshot {
   return {
     timestamp: Date.now(),
     turn,
@@ -249,8 +271,13 @@ export class TransactionManager {
    * Start a new transaction. Must be committed or rolled back before starting another.
    */
   startTransaction(world: World, turn: number): StateTransaction {
-    if (this.transaction && !this.transaction.committed && !this.transaction.rolledBack) {
-      throw new Error("Cannot start transaction: existing transaction not completed");
+    if (
+      this.transaction && !this.transaction.committed &&
+      !this.transaction.rolledBack
+    ) {
+      throw new Error(
+        "Cannot start transaction: existing transaction not completed",
+      );
     }
 
     this.transaction = {
@@ -276,7 +303,10 @@ export class TransactionManager {
    * Does NOT apply the change to the world yet.
    */
   recordChange(change: Omit<StateChange, "id">): StateChange {
-    if (!this.transaction || this.transaction.committed || this.transaction.rolledBack) {
+    if (
+      !this.transaction || this.transaction.committed ||
+      this.transaction.rolledBack
+    ) {
       throw new Error("No active transaction");
     }
 
@@ -332,7 +362,7 @@ export class TransactionManager {
    */
   getChangeDescriptions(): string[] {
     if (!this.transaction) return [];
-    return this.transaction.changes.map(c => c.description);
+    return this.transaction.changes.map((c) => c.description);
   }
 }
 
@@ -341,7 +371,7 @@ export class TransactionManager {
  * Supports nested field access via dot notation.
  */
 function applyChange(world: World, change: StateChange): void {
-  const entity = world.entities.find(e => e.id === change.entityId);
+  const entity = world.entities.find((e) => e.id === change.entityId);
   if (!entity) {
     // Special case: adding a new entity
     if (change.field === "__new_entity__" && change.newValue) {
@@ -350,7 +380,7 @@ function applyChange(world: World, change: StateChange): void {
     }
     // Special case: removing an entity
     if (change.field === "__remove_entity__") {
-      const index = world.entities.findIndex(e => e.id === change.entityId);
+      const index = world.entities.findIndex((e) => e.id === change.entityId);
       if (index !== -1) {
         world.entities.splice(index, 1);
       }
@@ -382,7 +412,7 @@ export function createEnergyChange(
   oldEnergy: number,
   newEnergy: number,
   turn: number,
-  reason: string
+  reason: string,
 ): Omit<StateChange, "id"> {
   return {
     entityId,
@@ -390,7 +420,9 @@ export function createEnergyChange(
     oldValue: oldEnergy,
     newValue: newEnergy,
     turn,
-    description: `Energy ${newEnergy > oldEnergy ? "increased" : "decreased"} by ${Math.abs(newEnergy - oldEnergy)} (${reason}). Now ${newEnergy}/100.`,
+    description: `Energy ${
+      newEnergy > oldEnergy ? "increased" : "decreased"
+    } by ${Math.abs(newEnergy - oldEnergy)} (${reason}). Now ${newEnergy}/100.`,
   };
 }
 
@@ -402,7 +434,7 @@ export function createHealthChange(
   oldHealth: number,
   newHealth: number,
   turn: number,
-  reason: string
+  reason: string,
 ): Omit<StateChange, "id"> {
   return {
     entityId,
@@ -410,7 +442,9 @@ export function createHealthChange(
     oldValue: oldHealth,
     newValue: newHealth,
     turn,
-    description: `Health ${newHealth > oldHealth ? "increased" : "decreased"} by ${Math.abs(newHealth - oldHealth)} (${reason}). Now ${newHealth}/100.`,
+    description: `Health ${
+      newHealth > oldHealth ? "increased" : "decreased"
+    } by ${Math.abs(newHealth - oldHealth)} (${reason}). Now ${newHealth}/100.`,
   };
 }
 
@@ -421,7 +455,7 @@ export function createLocationChange(
   entityId: string,
   oldLocation: string,
   newLocation: string,
-  turn: number
+  turn: number,
 ): Omit<StateChange, "id"> {
   return {
     entityId,
@@ -442,7 +476,7 @@ export function createInventoryChange(
   newInventory: string[],
   turn: number,
   action: "add" | "remove",
-  itemId: string
+  itemId: string,
 ): Omit<StateChange, "id"> {
   return {
     entityId,
@@ -469,18 +503,19 @@ export * from "./transaction.ts";
 
 ### Refactored `engine.ts`
 
-The `ActionEngine` needs to be refactored to use transactions. Here's the pattern:
+The `ActionEngine` needs to be refactored to use transactions. Here's the
+pattern:
 
 ```typescript
 // lib/game/engine.ts - REFACTORED VERSION
 
-import { Action, ActionResult, Entity, World, GameState } from "./types.ts";
+import { Action, ActionResult, Entity, GameState, World } from "./types.ts";
 import {
-  TransactionManager,
   createEnergyChange,
   createHealthChange,
-  createLocationChange,
   createInventoryChange,
+  createLocationChange,
+  TransactionManager,
 } from "./state/mod.ts";
 
 export class ActionEngine {
@@ -506,12 +541,15 @@ export class ActionEngine {
         success: false,
         world: this.world,
         changes: [],
-        error: "Invalid player"
+        error: "Invalid player",
       };
     }
 
     // Start transaction
-    const transaction = this.transactionManager.startTransaction(this.world, turn);
+    const transaction = this.transactionManager.startTransaction(
+      this.world,
+      turn,
+    );
 
     try {
       // Validate action is still possible
@@ -522,7 +560,7 @@ export class ActionEngine {
           success: false,
           world: this.world,
           changes: [],
-          error: validationError
+          error: validationError,
         };
       }
 
@@ -530,7 +568,13 @@ export class ActionEngine {
       if (action.energyCost > 0) {
         const newEnergy = Math.max(0, player.energy! - action.energyCost);
         this.transactionManager.recordChange(
-          createEnergyChange(playerId, player.energy!, newEnergy, turn, action.type)
+          createEnergyChange(
+            playerId,
+            player.energy!,
+            newEnergy,
+            turn,
+            action.type,
+          ),
         );
       }
 
@@ -551,7 +595,7 @@ export class ActionEngine {
         case "REST":
           this.recordRestChanges(player, turn);
           break;
-        // ... other action types
+          // ... other action types
       }
 
       // Commit transaction and get new world
@@ -567,7 +611,6 @@ export class ActionEngine {
         world: newWorld,
         changes,
       };
-
     } catch (error) {
       // Rollback on any error
       const originalWorld = this.transactionManager.rollback();
@@ -580,13 +623,21 @@ export class ActionEngine {
     }
   }
 
-  private recordMoveChanges(player: Entity, action: Action, turn: number): void {
+  private recordMoveChanges(
+    player: Entity,
+    action: Action,
+    turn: number,
+  ): void {
     this.transactionManager.recordChange(
-      createLocationChange(player.id, player.location!, action.target!, turn)
+      createLocationChange(player.id, player.location!, action.target!, turn),
     );
   }
 
-  private recordTakeItemChanges(player: Entity, action: Action, turn: number): void {
+  private recordTakeItemChanges(
+    player: Entity,
+    action: Action,
+    turn: number,
+  ): void {
     const item = this.entityMap.get(action.target!);
     if (!item) throw new Error(`Item not found: ${action.target}`);
 
@@ -603,11 +654,22 @@ export class ActionEngine {
     // Update player inventory
     const newInventory = [...(player.inventory || []), item.id];
     this.transactionManager.recordChange(
-      createInventoryChange(player.id, player.inventory || [], newInventory, turn, "add", item.id)
+      createInventoryChange(
+        player.id,
+        player.inventory || [],
+        newInventory,
+        turn,
+        "add",
+        item.id,
+      ),
     );
   }
 
-  private recordDropItemChanges(player: Entity, action: Action, turn: number): void {
+  private recordDropItemChanges(
+    player: Entity,
+    action: Action,
+    turn: number,
+  ): void {
     const item = this.entityMap.get(action.target!);
     if (!item) throw new Error(`Item not found: ${action.target}`);
 
@@ -622,37 +684,79 @@ export class ActionEngine {
     });
 
     // Update player inventory
-    const newInventory = (player.inventory || []).filter(id => id !== item.id);
+    const newInventory = (player.inventory || []).filter((id) =>
+      id !== item.id
+    );
     this.transactionManager.recordChange(
-      createInventoryChange(player.id, player.inventory || [], newInventory, turn, "remove", item.id)
+      createInventoryChange(
+        player.id,
+        player.inventory || [],
+        newInventory,
+        turn,
+        "remove",
+        item.id,
+      ),
     );
   }
 
-  private recordUseItemChanges(player: Entity, action: Action, turn: number): void {
+  private recordUseItemChanges(
+    player: Entity,
+    action: Action,
+    turn: number,
+  ): void {
     const item = this.entityMap.get(action.target!);
-    if (!item || item.type !== "item") throw new Error(`Invalid item: ${action.target}`);
+    if (!item || item.type !== "item") {
+      throw new Error(`Invalid item: ${action.target}`);
+    }
 
     // Apply item effects
     if (item.effects?.health) {
-      const newHealth = Math.max(0, Math.min(100, player.health! + item.effects.health));
+      const newHealth = Math.max(
+        0,
+        Math.min(100, player.health! + item.effects.health),
+      );
       this.transactionManager.recordChange(
-        createHealthChange(player.id, player.health!, newHealth, turn, `used ${item.name}`)
+        createHealthChange(
+          player.id,
+          player.health!,
+          newHealth,
+          turn,
+          `used ${item.name}`,
+        ),
       );
     }
 
     if (item.effects?.energy) {
-      const newEnergy = Math.max(0, Math.min(100, player.energy! + item.effects.energy));
+      const newEnergy = Math.max(
+        0,
+        Math.min(100, player.energy! + item.effects.energy),
+      );
       this.transactionManager.recordChange(
-        createEnergyChange(player.id, player.energy!, newEnergy, turn, `used ${item.name}`)
+        createEnergyChange(
+          player.id,
+          player.energy!,
+          newEnergy,
+          turn,
+          `used ${item.name}`,
+        ),
       );
     }
 
     // Remove consumable items
     if (item.consumable) {
       // Remove from inventory
-      const newInventory = (player.inventory || []).filter(id => id !== item.id);
+      const newInventory = (player.inventory || []).filter((id) =>
+        id !== item.id
+      );
       this.transactionManager.recordChange(
-        createInventoryChange(player.id, player.inventory || [], newInventory, turn, "remove", item.id)
+        createInventoryChange(
+          player.id,
+          player.inventory || [],
+          newInventory,
+          turn,
+          "remove",
+          item.id,
+        ),
       );
 
       // Mark entity as removed
@@ -670,7 +774,7 @@ export class ActionEngine {
   private recordRestChanges(player: Entity, turn: number): void {
     const newEnergy = Math.min(100, player.energy! + 30);
     this.transactionManager.recordChange(
-      createEnergyChange(player.id, player.energy!, newEnergy, turn, "resting")
+      createEnergyChange(player.id, player.energy!, newEnergy, turn, "resting"),
     );
   }
 
@@ -691,12 +795,14 @@ export class ActionEngine {
       }
       case "TAKE_ITEM": {
         const item = this.entityMap.get(action.target!);
-        if (!item || item.type !== "item" || item.location !== player.location) {
+        if (
+          !item || item.type !== "item" || item.location !== player.location
+        ) {
           return `Cannot take item: not available.`;
         }
         break;
       }
-      // ... other validations
+        // ... other validations
     }
 
     return null;
@@ -815,11 +921,19 @@ async performAction(sessionId: string, action: Action): Promise<GameActionRespon
 
 ### Testing the Transaction System
 
-Create `lib/game/state/transaction_test.ts` (Deno convention: `*_test.ts` not `*.test.ts`):
+Create `lib/game/state/transaction_test.ts` (Deno convention: `*_test.ts` not
+`*.test.ts`):
 
 ```typescript
-import { assertEquals, assertThrows } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { TransactionManager, createSnapshot, cloneWorld } from "./transaction.ts";
+import {
+  assertEquals,
+  assertThrows,
+} from "https://deno.land/std@0.224.0/assert/mod.ts";
+import {
+  cloneWorld,
+  createSnapshot,
+  TransactionManager,
+} from "./transaction.ts";
 import { World } from "../types.ts";
 
 function createTestWorld(): World {
@@ -874,11 +988,11 @@ Deno.test("TransactionManager - commit applies changes", () => {
 
   const newWorld = manager.commit(world);
 
-  const player = newWorld.entities.find(e => e.id === "player")!;
+  const player = newWorld.entities.find((e) => e.id === "player")!;
   assertEquals(player.energy, 70);
 
   // Original world unchanged
-  const originalPlayer = world.entities.find(e => e.id === "player")!;
+  const originalPlayer = world.entities.find((e) => e.id === "player")!;
   assertEquals(originalPlayer.energy, 80);
 });
 
@@ -898,7 +1012,7 @@ Deno.test("TransactionManager - rollback restores original state", () => {
 
   const restoredWorld = manager.rollback();
 
-  const player = restoredWorld.entities.find(e => e.id === "player")!;
+  const player = restoredWorld.entities.find((e) => e.id === "player")!;
   assertEquals(player.energy, 80);
 });
 
@@ -911,7 +1025,7 @@ Deno.test("TransactionManager - cannot start transaction while one is active", (
   assertThrows(
     () => manager.startTransaction(world, 2),
     Error,
-    "existing transaction not completed"
+    "existing transaction not completed",
   );
 });
 
@@ -942,7 +1056,7 @@ Deno.test("TransactionManager - multiple changes in single transaction", () => {
   });
 
   const newWorld = manager.commit(world);
-  const player = newWorld.entities.find(e => e.id === "player")!;
+  const player = newWorld.entities.find((e) => e.id === "player")!;
 
   assertEquals(player.location, "forest");
   assertEquals(player.energy, 75);
@@ -985,7 +1099,9 @@ Sessions have a hard 24-hour TTL that is never extended:
 
 ```typescript
 // kv-session-manager.ts line 33
-{ expireIn: 24 * 60 * 60 * 1000 }
+{
+  expireIn: 24 * 60 * 60 * 1000;
+}
 ```
 
 The `lastActivity` timestamp is updated but never used to extend the TTL.
@@ -1024,7 +1140,7 @@ export class KvSessionManager implements ISessionManager {
     await this.kv.set(
       ["sessions", sessionData.sessionId],
       sessionData,
-      { expireIn: SESSION_TTL_MS }
+      { expireIn: SESSION_TTL_MS },
     );
 
     return sessionData;
@@ -1047,12 +1163,15 @@ export class KvSessionManager implements ISessionManager {
    * Extend session TTL without modifying data.
    * Called on every read to implement sliding window expiry.
    */
-  private async touchSession(sessionId: string, data: SessionData): Promise<void> {
+  private async touchSession(
+    sessionId: string,
+    data: SessionData,
+  ): Promise<void> {
     data.lastActivity = Date.now();
     await this.kv.set(
       ["sessions", sessionId],
       data,
-      { expireIn: SESSION_TTL_MS }
+      { expireIn: SESSION_TTL_MS },
     );
   }
 
@@ -1061,7 +1180,7 @@ export class KvSessionManager implements ISessionManager {
     await this.kv.set(
       ["sessions", sessionData.sessionId],
       sessionData,
-      { expireIn: SESSION_TTL_MS } // Always extend TTL on save
+      { expireIn: SESSION_TTL_MS }, // Always extend TTL on save
     );
   }
 
@@ -1123,7 +1242,7 @@ Create a `ContextBuilder` module with reusable context building functions.
 ### New Module: `lib/game/llm/context/builder.ts`
 
 ```typescript
-import { World, Entity, Message } from "../../types.ts";
+import { Entity, Message, World } from "../../types.ts";
 
 /**
  * Builds context strings for LLM prompts.
@@ -1164,7 +1283,7 @@ export class ContextBuilder {
    */
   static getEntitiesAtLocation(world: World, locationId: string): Entity[] {
     return world.entities.filter(
-      (e) => e.type !== "place" && e.location === locationId
+      (e) => e.type !== "place" && e.location === locationId,
     );
   }
 
@@ -1183,7 +1302,9 @@ export class ContextBuilder {
    * Build player status context string.
    */
   static buildPlayerStatus(player: Entity): string {
-    return `Player Status: Health ${player.health ?? 100}/100, Energy ${player.energy ?? 100}/100`;
+    return `Player Status: Health ${player.health ?? 100}/100, Energy ${
+      player.energy ?? 100
+    }/100`;
   }
 
   /**
@@ -1247,7 +1368,7 @@ export class ContextBuilder {
     playerId: string,
     actionDescription: string,
     changes: string[],
-    targetId?: string
+    targetId?: string,
   ): string {
     const player = this.getPlayer(world, playerId);
     const location = this.getLocation(world, player.location!);
@@ -1284,7 +1405,9 @@ export class ContextBuilder {
     return [
       `Current Location: ${location.name}`,
       `Location Description: ${location.description}`,
-      `Entities here: ${entities.map((e) => `${e.name} (${e.type})`).join(", ") || "None"}`,
+      `Entities here: ${
+        entities.map((e) => `${e.name} (${e.type})`).join(", ") || "None"
+      }`,
       `Connected places: ${connected.map((c) => c.name).join(", ") || "None"}`,
       `World theme: ${world.world_description}`,
     ].join("\n");
@@ -1296,7 +1419,7 @@ export class ContextBuilder {
   static buildActionSelectionContext(
     world: World,
     playerId: string,
-    availableActions: string[]
+    availableActions: string[],
   ): string {
     const player = this.getPlayer(world, playerId);
     const location = this.getLocation(world, player.location!);
@@ -1364,7 +1487,7 @@ export class LLMNarrator implements INarrator {
     action: Action,
     changes: string[],
     playerId: string,
-    messageHistory: Message[]
+    messageHistory: Message[],
   ): Promise<string> {
     // Use ContextBuilder instead of manual extraction
     const context = ContextBuilder.buildActionContext(
@@ -1372,10 +1495,11 @@ export class LLMNarrator implements INarrator {
       playerId,
       action.description,
       changes,
-      action.target
+      action.target,
     );
 
-    const instruction = `Narrate what happened when the player performed this action.
+    const instruction =
+      `Narrate what happened when the player performed this action.
 Be vivid but concise (1-3 sentences).
 Focus on the immediate experience and any interesting details.
 Do not repeat the action description verbatim.`;
@@ -1402,7 +1526,8 @@ Do not repeat the action description verbatim.`;
 }
 ```
 
-Similar refactoring applies to `action-selector.ts` and `discovery-generator.ts`.
+Similar refactoring applies to `action-selector.ts` and
+`discovery-generator.ts`.
 
 ---
 
@@ -1410,11 +1535,13 @@ Similar refactoring applies to `action-selector.ts` and `discovery-generator.ts`
 
 ### Problem Statement
 
-There is no token counting in the codebase. The `slice(-5)` pattern assumes all messages are equal size, which is incorrect.
+There is no token counting in the codebase. The `slice(-5)` pattern assumes all
+messages are equal size, which is incorrect.
 
 ### Solution
 
 Add a simple token estimator that can be used for:
+
 1. Truncating message history to fit context limits
 2. Calculating energy cost based on token usage (for scene/day system)
 3. Validating prompts don't exceed model limits
@@ -1478,7 +1605,7 @@ export class TokenEstimator {
   static fitsInContext(
     messages: Message[],
     model: string,
-    reserveTokens: number = 500
+    reserveTokens: number = 500,
   ): boolean {
     const limit = this.getModelLimit(model) - reserveTokens;
     return this.estimateMessages(messages) <= limit;
@@ -1504,7 +1631,8 @@ export class ContextLimiter {
   truncate(messages: Message[]): Message[] {
     if (messages.length === 0) return [];
 
-    const maxTokens = TokenEstimator.getModelLimit(this.model) - this.reserveTokens;
+    const maxTokens = TokenEstimator.getModelLimit(this.model) -
+      this.reserveTokens;
     const systemMessage = messages[0];
     const systemTokens = TokenEstimator.estimateMessage(systemMessage);
 
@@ -1568,7 +1696,7 @@ export class ContextLimiter {
  */
 export function calculateEnergyCost(
   messages: Message[],
-  tokensPerEnergyPoint: number = 40
+  tokensPerEnergyPoint: number = 40,
 ): number {
   const tokens = TokenEstimator.estimateMessages(messages);
   return Math.ceil(tokens / tokensPerEnergyPoint);
@@ -1580,8 +1708,15 @@ export function calculateEnergyCost(
 ```typescript
 // lib/game/llm/context/tokens_test.ts (Deno convention: *_test.ts)
 
-import { assertEquals, assert } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { TokenEstimator, ContextLimiter, calculateEnergyCost } from "./tokens.ts";
+import {
+  assert,
+  assertEquals,
+} from "https://deno.land/std@0.224.0/assert/mod.ts";
+import {
+  calculateEnergyCost,
+  ContextLimiter,
+  TokenEstimator,
+} from "./tokens.ts";
 import { Message } from "../../types.ts";
 
 Deno.test("TokenEstimator - estimate returns correct approximation", () => {
@@ -1653,30 +1788,39 @@ Deno.test("calculateEnergyCost - returns correct cost", () => {
 
 ### Problem Statement
 
-Test helper functions like `createTestWorld()` are duplicated across multiple test files. This will get worse as new scene/day/memory types need test builders.
+Test helper functions like `createTestWorld()` are duplicated across multiple
+test files. This will get worse as new scene/day/memory types need test
+builders.
 
-Additionally, mock implementations of interfaces (like `MockNarrator`, `MockSessionManager`) are defined inline in test files, making them hard to reuse.
+Additionally, mock implementations of interfaces (like `MockNarrator`,
+`MockSessionManager`) are defined inline in test files, making them hard to
+reuse.
 
 ### Solution: Hybrid Approach
 
 Use a **hybrid mock organization strategy**:
 
-1. **Colocate interface mocks** with their interfaces (e.g., `mock_session_manager.ts` in `session/`)
+1. **Colocate interface mocks** with their interfaces (e.g.,
+   `mock_session_manager.ts` in `session/`)
 2. **Centralize test builders** in `_testing/` (e.g., `TestWorldBuilder`)
 
 This approach:
-- Makes mocks discoverable (they're exported from the same module as real implementations)
+
+- Makes mocks discoverable (they're exported from the same module as real
+  implementations)
 - Allows mocks to be used in production if needed (e.g., for demos)
 - Keeps test data builders separate from production code
 
 ### New Module: `lib/game/_testing/builders.ts`
 
-> **Note**: The `_testing` directory uses underscore prefix per Deno convention to indicate this is an internal module not meant to have a stable public API.
+> **Note**: The `_testing` directory uses underscore prefix per Deno convention
+> to indicate this is an internal module not meant to have a stable public API.
 >
-> This directory contains **only test data builders**, not mocks. Mocks live colocated with their interfaces.
+> This directory contains **only test data builders**, not mocks. Mocks live
+> colocated with their interfaces.
 
 ```typescript
-import { World, Entity, GameState, Message, SessionData } from "../types.ts";
+import { Entity, GameState, Message, SessionData, World } from "../types.ts";
 
 /**
  * Fluent builder for creating test worlds.
@@ -1718,7 +1862,9 @@ export class TestWorldBuilder {
     return this;
   }
 
-  withPerson(person: Partial<Entity> & { id: string; name: string; location: string }): this {
+  withPerson(
+    person: Partial<Entity> & { id: string; name: string; location: string },
+  ): this {
     this.world.entities.push({
       type: "person",
       description: `A person named ${person.name}`,
@@ -1730,7 +1876,9 @@ export class TestWorldBuilder {
     return this;
   }
 
-  withItem(item: Partial<Entity> & { id: string; name: string; location: string }): this {
+  withItem(
+    item: Partial<Entity> & { id: string; name: string; location: string },
+  ): this {
     this.world.entities.push({
       type: "item",
       description: `An item called ${item.name}`,
@@ -1741,8 +1889,12 @@ export class TestWorldBuilder {
     return this;
   }
 
-  withConnection(fromId: string, toId: string, requirements?: { requires_item?: string; requires_health?: number }): this {
-    const place = this.world.entities.find(e => e.id === fromId);
+  withConnection(
+    fromId: string,
+    toId: string,
+    requirements?: { requires_item?: string; requires_health?: number },
+  ): this {
+    const place = this.world.entities.find((e) => e.id === fromId);
     if (place && place.type === "place") {
       place.connections = place.connections || {};
       place.connections[toId] = requirements || {};
@@ -1889,7 +2041,9 @@ export class TestGameStateBuilder {
   static withStandardSetup(world?: World): GameState {
     const w = world ?? TestWorldBuilder.standard();
     return new TestGameStateBuilder(w)
-      .withSystemMessage(`You are the narrator for an adventure in: ${w.world_description}`)
+      .withSystemMessage(
+        `You are the narrator for an adventure in: ${w.world_description}`,
+      )
       .withAssistantMessage("You find yourself in the town square...")
       .build();
   }
@@ -1967,7 +2121,7 @@ Mock implementations live alongside their interfaces, not in `_testing/`:
 ```typescript
 // lib/game/session/mock_session_manager.ts
 import { ISessionManager } from "./interface.ts";
-import { SessionData, World, GameState } from "../types.ts";
+import { GameState, SessionData, World } from "../types.ts";
 
 /**
  * In-memory session manager for testing.
@@ -1995,7 +2149,10 @@ export class MockSessionManager implements ISessionManager {
   }
 
   async saveSession(session: SessionData): Promise<void> {
-    this.sessions.set(session.sessionId, { ...session, lastActivity: Date.now() });
+    this.sessions.set(session.sessionId, {
+      ...session,
+      lastActivity: Date.now(),
+    });
   }
 
   async updateWorld(sessionId: string, world: World): Promise<void> {
@@ -2014,7 +2171,10 @@ export class MockSessionManager implements ISessionManager {
     }
   }
 
-  async updateGameState(sessionId: string, gameState: GameState): Promise<void> {
+  async updateGameState(
+    sessionId: string,
+    gameState: GameState,
+  ): Promise<void> {
     const session = this.sessions.get(sessionId);
     if (session) {
       session.currentGameState = gameState;
@@ -2043,7 +2203,7 @@ export class MockSessionManager implements ISessionManager {
 ```typescript
 // lib/game/llm/services/mock_world_generator.ts
 import { IWorldGenerator } from "./interface.ts";
-import { World, Message } from "../../types.ts";
+import { Message, World } from "../../types.ts";
 
 /**
  * Mock world generator that returns predefined worlds.
@@ -2053,7 +2213,10 @@ export class MockWorldGenerator implements IWorldGenerator {
   private openingScene: string;
   private shouldFail: boolean = false;
 
-  constructor(world: World, openingScene: string = "You begin your adventure...") {
+  constructor(
+    world: World,
+    openingScene: string = "You begin your adventure...",
+  ) {
     this.world = world;
     this.openingScene = openingScene;
   }
@@ -2073,7 +2236,10 @@ export class MockWorldGenerator implements IWorldGenerator {
     return JSON.parse(JSON.stringify(this.world));
   }
 
-  async generateOpeningScene(_world: World, _messageHistory: Message[]): Promise<string> {
+  async generateOpeningScene(
+    _world: World,
+    _messageHistory: Message[],
+  ): Promise<string> {
     if (this.shouldFail) {
       throw new Error("Mock opening scene generation failed");
     }
@@ -2087,7 +2253,7 @@ export class MockWorldGenerator implements IWorldGenerator {
 ```typescript
 // lib/game/llm/services/mock_narrator.ts
 import { INarrator } from "./interface.ts";
-import { World, Action, Message } from "../../types.ts";
+import { Action, Message, World } from "../../types.ts";
 
 /**
  * Mock narrator that returns predefined narrations.
@@ -2097,7 +2263,10 @@ export class MockNarrator implements INarrator {
   private index: number = 0;
   private defaultNarration: string;
 
-  constructor(narrations: string[] = [], defaultNarration: string = "You do the thing.") {
+  constructor(
+    narrations: string[] = [],
+    defaultNarration: string = "You do the thing.",
+  ) {
     this.narrations = narrations;
     this.defaultNarration = defaultNarration;
   }
@@ -2115,7 +2284,7 @@ export class MockNarrator implements INarrator {
     _action: Action,
     _changes: string[],
     _playerId: string,
-    _messageHistory: Message[]
+    _messageHistory: Message[],
   ): Promise<string> {
     if (this.index < this.narrations.length) {
       return this.narrations[this.index++];
@@ -2130,7 +2299,7 @@ export class MockNarrator implements INarrator {
 ```typescript
 // lib/game/llm/services/mock_action_selector.ts
 import { IActionSelector } from "./interface.ts";
-import { World, Action, Message } from "../../types.ts";
+import { Action, Message, World } from "../../types.ts";
 
 /**
  * Mock action selector that returns predefined action sets.
@@ -2147,7 +2316,7 @@ export class MockActionSelector implements IActionSelector {
     _playerId: string,
     _messageHistory: Message[],
     availableActions: Action[],
-    maxActions: number = 9
+    maxActions: number = 9,
   ): Promise<Action[]> {
     if (this.selectedActions) {
       return this.selectedActions.slice(0, maxActions);
@@ -2162,7 +2331,7 @@ export class MockActionSelector implements IActionSelector {
 ```typescript
 // lib/game/llm/services/mock_discovery_generator.ts
 import { IDiscoveryGenerator } from "./interface.ts";
-import { World, Entity, Message } from "../../types.ts";
+import { Entity, Message, World } from "../../types.ts";
 
 /**
  * Mock discovery generator that returns predefined discoveries.
@@ -2186,7 +2355,7 @@ export class MockDiscoveryGenerator implements IDiscoveryGenerator {
   async generateDiscovery(
     _world: World,
     _playerId: string,
-    _messageHistory: Message[]
+    _messageHistory: Message[],
   ): Promise<Entity | null> {
     if (this.index < this.discoveries.length) {
       const discovery = this.discoveries[this.index++];
@@ -2279,14 +2448,18 @@ export function extractSessionId(req: Request): string | null {
  * Validate that a string is a valid UUID format.
  */
 export function isValidSessionId(id: string): boolean {
-  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  const uuidRegex =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   return uuidRegex.test(id);
 }
 
 /**
  * Create a Set-Cookie header value for a session.
  */
-export function createSessionCookie(sessionId: string, maxAgeSeconds: number): string {
+export function createSessionCookie(
+  sessionId: string,
+  maxAgeSeconds: number,
+): string {
   return `${SESSION_COOKIE_NAME}=${sessionId}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${maxAgeSeconds}`;
 }
 
@@ -2319,7 +2492,9 @@ export function getSessionIdFromContext(ctx: FreshContext): string | null {
 /**
  * Create a 401 Unauthorized response for missing/invalid sessions.
  */
-export function unauthorizedResponse(message: string = "Unauthorized"): Response {
+export function unauthorizedResponse(
+  message: string = "Unauthorized",
+): Response {
   return new Response(JSON.stringify({ error: message }), {
     status: 401,
     headers: { "Content-Type": "application/json" },
@@ -2346,9 +2521,9 @@ import { Handlers } from "$fresh/server.ts";
 import { GameService } from "../../../lib/game/game-service.ts";
 import { KvSessionManager } from "../../../lib/game/session/kv-session-manager.ts";
 import {
+  badRequestResponse,
   getSessionIdFromContext,
   unauthorizedResponse,
-  badRequestResponse
 } from "../../../lib/game/session/utils.ts";
 
 export const handler: Handlers = {
@@ -2383,8 +2558,10 @@ export const handler: Handlers = {
     } catch (error) {
       console.error("Action failed:", error);
       return new Response(
-        JSON.stringify({ error: error instanceof Error ? error.message : "Unknown error" }),
-        { status: 500, headers: { "Content-Type": "application/json" } }
+        JSON.stringify({
+          error: error instanceof Error ? error.message : "Unknown error",
+        }),
+        { status: 500, headers: { "Content-Type": "application/json" } },
       );
     }
   },
@@ -2492,15 +2669,15 @@ After completing Phase 0, the codebase should:
 
 ## Estimated Effort
 
-| Phase | Estimated Time | Complexity |
-|-------|----------------|------------|
-| 0.1 State Transactions | 4-6 hours | High |
-| 0.2 Session TTL | 1-2 hours | Low |
-| 0.3 Context Builder | 2-3 hours | Medium |
-| 0.4 Token Estimation | 2-3 hours | Medium |
-| 0.5 Test Utilities | 3-4 hours | Medium |
-| 0.6 Session Middleware | 1-2 hours | Low |
-| **Total** | **13-20 hours** | |
+| Phase                  | Estimated Time  | Complexity |
+| ---------------------- | --------------- | ---------- |
+| 0.1 State Transactions | 4-6 hours       | High       |
+| 0.2 Session TTL        | 1-2 hours       | Low        |
+| 0.3 Context Builder    | 2-3 hours       | Medium     |
+| 0.4 Token Estimation   | 2-3 hours       | Medium     |
+| 0.5 Test Utilities     | 3-4 hours       | Medium     |
+| 0.6 Session Middleware | 1-2 hours       | Low        |
+| **Total**              | **13-20 hours** |            |
 
 ---
 
@@ -2515,12 +2692,12 @@ After completing Phase 0, the codebase should:
 
 ## Risks and Mitigations
 
-| Risk | Mitigation |
-|------|------------|
-| Transaction refactor breaks existing tests | Run tests after each file change, not at end |
-| Token estimation is inaccurate | Use conservative estimates, tune later |
+| Risk                                         | Mitigation                                              |
+| -------------------------------------------- | ------------------------------------------------------- |
+| Transaction refactor breaks existing tests   | Run tests after each file change, not at end            |
+| Token estimation is inaccurate               | Use conservative estimates, tune later                  |
 | Session TTL change affects existing sessions | Existing sessions will just get extended on next access |
-| Context builder doesn't cover all cases | Design for extensibility, add methods as needed |
+| Context builder doesn't cover all cases      | Design for extensibility, add methods as needed         |
 
 ---
 
@@ -2534,6 +2711,7 @@ Once Phase 0 is complete, proceed to Phase 1 of the scene/day architecture:
 4. Integration with transaction system for scene-boundary snapshots
 
 The foundation work in Phase 0 makes Phase 1 significantly simpler because:
+
 - Snapshots are trivial (just call createSnapshot at scene boundaries)
 - Rollback is available (if scene compression fails)
 - Context building is centralized (easy to add scene context)
