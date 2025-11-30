@@ -269,28 +269,39 @@ export class GameService {
     const world = gameState.world;
     const playerId = gameState.playerId;
 
-    // Execute the action
+    // Execute the action with transaction support
     const engine = new ActionEngine(world);
-    const result = engine.executeAction(playerId, action);
+    const result = engine.executeAction(
+      playerId,
+      action,
+      gameState.currentTurn,
+    );
+
+    // Use the new world from the transaction result
+    let updatedWorld = result.world;
+    const changes = [...result.changes];
 
     // Handle EXPLORE action - generate discovery
     let discovery: Entity | undefined;
     if (action.type === "EXPLORE") {
       const generatedDiscovery = await this.discoveryGenerator
         .generateDiscovery(
-          world,
+          updatedWorld,
           playerId,
           gameState.messageHistory,
         );
 
       if (generatedDiscovery) {
-        // Add the discovery to the world
-        world.entities.push(generatedDiscovery);
+        // Add the discovery to the world (create new reference)
+        updatedWorld = {
+          ...updatedWorld,
+          entities: [...updatedWorld.entities, generatedDiscovery],
+        };
 
         // If it's a new place, update connections
         if (generatedDiscovery.type === "place") {
-          const player = world.entities.find((e) => e.id === playerId)!;
-          const currentLocation = world.entities.find(
+          const player = updatedWorld.entities.find((e) => e.id === playerId)!;
+          const currentLocation = updatedWorld.entities.find(
             (e) => e.id === player.location,
           )!;
           if (currentLocation.connections) {
@@ -300,18 +311,18 @@ export class GameService {
 
         // Add discovery text to changes
         if (generatedDiscovery.type === "place") {
-          result.changes.push(
+          changes.push(
             `You discovered a new location: ${generatedDiscovery.name}!`,
           );
         } else if (generatedDiscovery.type === "item") {
-          result.changes.push(`You found ${generatedDiscovery.name}!`);
+          changes.push(`You found ${generatedDiscovery.name}!`);
         } else if (generatedDiscovery.type === "person") {
-          result.changes.push(`You encountered ${generatedDiscovery.name}!`);
+          changes.push(`You encountered ${generatedDiscovery.name}!`);
         }
 
         discovery = generatedDiscovery;
       } else {
-        result.changes.push(
+        changes.push(
           "You search thoroughly but find nothing new this time.",
         );
       }
@@ -320,8 +331,8 @@ export class GameService {
     // Generate narration
     const narration = await this.narrator.narrateAction(
       action,
-      result.changes,
-      world,
+      changes,
+      updatedWorld,
       playerId,
       gameState.messageHistory,
     );
@@ -343,11 +354,13 @@ export class GameService {
     // Increment turn counter
     gameState.currentTurn++;
 
-    // Update the game state in session
+    // Update the game state in session with the new world
+    gameState.world = updatedWorld;
     await this.sessionManager.updateGameState(sessionId, gameState);
 
-    // Get player state
-    const playerState = engine.getPlayerState(playerId);
+    // Get player state from the updated engine
+    const updatedEngine = new ActionEngine(updatedWorld);
+    const playerState = updatedEngine.getPlayerState(playerId);
 
     if (!playerState) {
       throw new Error("Failed to get player state");
@@ -365,10 +378,10 @@ export class GameService {
     // Generate new actions if game is not over
     let availableActions: Action[] = [];
     if (!gameOver) {
-      const allActions = engine.generateValidActions(playerId);
+      const allActions = updatedEngine.generateValidActions(playerId);
       availableActions = await this.actionSelector.selectInterestingActions(
         allActions,
-        world,
+        updatedWorld,
         playerId,
         gameState.messageHistory,
       );

@@ -1,13 +1,24 @@
-import type { Action, Entity, World } from "./types.ts";
+import type { Action, ActionResult, Entity, World } from "./types.ts";
+import {
+  cloneWorld,
+  createEnergyChange,
+  createHealthChange,
+  createInventoryChange,
+  createLocationChange,
+  TransactionManager,
+} from "./state/mod.ts";
 
 // Action Generation and Execution Engine
 export class ActionEngine {
   private world: World;
   private entityMap: Map<string, Entity>;
+  private transactionManager: TransactionManager;
 
   constructor(world: World) {
-    this.world = world;
-    this.entityMap = new Map(world.entities.map((e) => [e.id, e]));
+    // Store a CLONE, not the original - ensures immutability
+    this.world = cloneWorld(world);
+    this.entityMap = new Map(this.world.entities.map((e) => [e.id, e]));
+    this.transactionManager = new TransactionManager();
   }
 
   generateValidActions(playerId: string): Action[] {
@@ -197,193 +208,367 @@ export class ActionEngine {
     return actions;
   }
 
-  executeAction(
-    playerId: string,
-    action: Action,
-  ): { success: boolean; changes: string[]; newState: World } {
-    const changes: string[] = [];
+  /**
+   * Execute an action using transaction pattern.
+   * Returns a new world state (original is never modified).
+   */
+  executeAction(playerId: string, action: Action, turn: number): ActionResult {
     const player = this.entityMap.get(playerId);
 
     // Validate player exists
     if (!player || player.type !== "person") {
       return {
         success: false,
-        changes: ["Invalid player"],
-        newState: this.world,
+        world: this.world,
+        changes: [],
+        error: "Invalid player",
       };
     }
 
-    // Apply energy cost
-    if (action.energyCost > 0) {
-      player.energy = Math.max(0, player.energy! - action.energyCost);
-      changes.push(
-        `Energy decreased by ${action.energyCost} (now ${player.energy})`,
+    // Start transaction
+    this.transactionManager.startTransaction(this.world, turn);
+
+    try {
+      // Validate action is still possible
+      const validationError = this.validateAction(action, player);
+      if (validationError) {
+        this.transactionManager.rollback();
+        return {
+          success: false,
+          world: this.world,
+          changes: [],
+          error: validationError,
+        };
+      }
+
+      // Record energy cost (if any)
+      if (action.energyCost > 0) {
+        const newEnergy = Math.max(0, player.energy! - action.energyCost);
+        this.transactionManager.recordChange(
+          createEnergyChange(
+            playerId,
+            player.energy!,
+            newEnergy,
+            turn,
+            action.type,
+          ),
+        );
+      }
+
+      // Execute action-specific logic
+      switch (action.type) {
+        case "MOVE":
+          this.recordMoveChanges(player, action, turn);
+          break;
+        case "TALK":
+          this.recordTalkChanges(player, action, turn);
+          break;
+        case "TAKE_ITEM":
+          this.recordTakeItemChanges(player, action, turn);
+          break;
+        case "DROP_ITEM":
+          this.recordDropItemChanges(player, action, turn);
+          break;
+        case "USE_ITEM":
+          this.recordUseItemChanges(player, action, turn);
+          break;
+        case "EXAMINE":
+          this.recordExamineChanges(action, turn);
+          break;
+        case "REST":
+          this.recordRestChanges(player, turn);
+          break;
+        case "WAIT":
+          // No state changes for WAIT
+          break;
+        case "EXPLORE":
+          // No state changes for EXPLORE (discovery handled externally)
+          break;
+      }
+
+      // Commit transaction and get new world
+      const newWorld = this.transactionManager.commit(this.world);
+      const changes = this.transactionManager.getChangeDescriptions();
+
+      // Update internal state for subsequent operations
+      this.world = newWorld;
+      this.entityMap = new Map(this.world.entities.map((e) => [e.id, e]));
+
+      return {
+        success: true,
+        world: newWorld,
+        changes,
+      };
+    } catch (error) {
+      // Rollback on any error
+      const originalWorld = this.transactionManager.rollback();
+      return {
+        success: false,
+        world: originalWorld,
+        changes: [],
+        error: error instanceof Error ? error.message : "Unknown error",
+      };
+    }
+  }
+
+  /**
+   * Validate that an action can be performed.
+   */
+  private validateAction(action: Action, player: Entity): string | null {
+    // Check energy
+    if (player.energy! < action.energyCost) {
+      return `Not enough energy. Need ${action.energyCost}, have ${player.energy}.`;
+    }
+
+    // Action-specific validation
+    switch (action.type) {
+      case "MOVE": {
+        const location = this.entityMap.get(player.location!);
+        if (!location?.connections?.[action.target!]) {
+          return `Cannot move to ${action.target}: not connected.`;
+        }
+        break;
+      }
+      case "TAKE_ITEM": {
+        const item = this.entityMap.get(action.target!);
+        if (
+          !item || item.type !== "item" || item.location !== player.location
+        ) {
+          return "Cannot take item: not available.";
+        }
+        break;
+      }
+      case "DROP_ITEM": {
+        if (!player.inventory?.includes(action.target!)) {
+          return "Cannot drop item: not in inventory.";
+        }
+        break;
+      }
+      case "USE_ITEM": {
+        if (!player.inventory?.includes(action.target!)) {
+          return "Cannot use item: not in inventory.";
+        }
+        break;
+      }
+      case "TALK": {
+        const target = this.entityMap.get(action.target!);
+        if (!target || target.type !== "person") {
+          return "Cannot talk to: invalid target.";
+        }
+        if (target.location !== player.location) {
+          return "Cannot talk to: not in same location.";
+        }
+        break;
+      }
+      case "EXAMINE": {
+        const target = this.entityMap.get(action.target!);
+        if (!target) {
+          return "Cannot examine: invalid target.";
+        }
+        break;
+      }
+    }
+
+    return null;
+  }
+
+  private recordMoveChanges(
+    player: Entity,
+    action: Action,
+    turn: number,
+  ): void {
+    this.transactionManager.recordChange(
+      createLocationChange(player.id, player.location!, action.target!, turn),
+    );
+  }
+
+  private recordTalkChanges(
+    _player: Entity,
+    action: Action,
+    turn: number,
+  ): void {
+    const target = this.entityMap.get(action.target!);
+    // Record as a no-op change for tracking conversation
+    this.transactionManager.recordChange({
+      entityId: action.target!,
+      field: "__conversation__",
+      oldValue: null,
+      newValue: turn,
+      turn,
+      description: `Had a conversation with ${target?.name || action.target}.`,
+    });
+  }
+
+  private recordTakeItemChanges(
+    player: Entity,
+    action: Action,
+    turn: number,
+  ): void {
+    const item = this.entityMap.get(action.target!);
+    if (!item) throw new Error(`Item not found: "${action.target}"`);
+
+    // Update item location to indicate it's in inventory
+    this.transactionManager.recordChange({
+      entityId: item.id,
+      field: "location",
+      oldValue: item.location,
+      newValue: player.id,
+      turn,
+      description: `${item.name} picked up.`,
+    });
+
+    // Update player inventory
+    const newInventory = [...(player.inventory || []), item.id];
+    this.transactionManager.recordChange(
+      createInventoryChange(
+        player.id,
+        player.inventory || [],
+        newInventory,
+        turn,
+        "add",
+        item.name,
+      ),
+    );
+  }
+
+  private recordDropItemChanges(
+    player: Entity,
+    action: Action,
+    turn: number,
+  ): void {
+    const item = this.entityMap.get(action.target!);
+    if (!item) throw new Error(`Item not found: "${action.target}"`);
+
+    // Update item location to player's current location
+    this.transactionManager.recordChange({
+      entityId: item.id,
+      field: "location",
+      oldValue: player.id,
+      newValue: player.location,
+      turn,
+      description: `${item.name} dropped.`,
+    });
+
+    // Update player inventory
+    const newInventory = (player.inventory || []).filter((id) =>
+      id !== item.id
+    );
+    this.transactionManager.recordChange(
+      createInventoryChange(
+        player.id,
+        player.inventory || [],
+        newInventory,
+        turn,
+        "remove",
+        item.name,
+      ),
+    );
+  }
+
+  private recordUseItemChanges(
+    player: Entity,
+    action: Action,
+    turn: number,
+  ): void {
+    const item = this.entityMap.get(action.target!);
+    if (!item || item.type !== "item") {
+      throw new Error(`Invalid item: "${action.target}"`);
+    }
+
+    // Apply item effects
+    if (item.effects?.health) {
+      const newHealth = Math.max(
+        0,
+        Math.min(100, player.health! + item.effects.health),
+      );
+      this.transactionManager.recordChange(
+        createHealthChange(
+          player.id,
+          player.health!,
+          newHealth,
+          turn,
+          `used ${item.name}`,
+        ),
       );
     }
 
-    switch (action.type) {
-      case "MOVE": {
-        const targetPlace = this.entityMap.get(action.target!);
-        if (!targetPlace || targetPlace.type !== "place") {
-          return {
-            success: false,
-            changes: [`Invalid destination: ${action.target}`],
-            newState: this.world,
-          };
-        }
-        player.location = action.target!;
-        changes.push(`Moved to ${targetPlace.name}`);
-        break;
-      }
-
-      case "TALK": {
-        const targetPerson = this.entityMap.get(action.target!);
-        if (!targetPerson || targetPerson.type !== "person") {
-          return {
-            success: false,
-            changes: [`Cannot talk to: ${action.target}`],
-            newState: this.world,
-          };
-        }
-        changes.push(`Had a conversation with ${targetPerson.name}`);
-        break;
-      }
-
-      case "TAKE_ITEM": {
-        const itemToTake = this.entityMap.get(action.target!);
-        if (!itemToTake || itemToTake.type !== "item") {
-          return {
-            success: false,
-            changes: [`Invalid item: ${action.target}`],
-            newState: this.world,
-          };
-        }
-        itemToTake.location = playerId;
-        player.inventory!.push(action.target!);
-        changes.push(`Picked up ${itemToTake.name}`);
-        break;
-      }
-
-      case "DROP_ITEM": {
-        const itemToDrop = this.entityMap.get(action.target!);
-        if (!itemToDrop || itemToDrop.type !== "item") {
-          return {
-            success: false,
-            changes: [`Invalid item: ${action.target}`],
-            newState: this.world,
-          };
-        }
-        if (!player.inventory?.includes(action.target!)) {
-          return {
-            success: false,
-            changes: [`Item not in inventory: ${itemToDrop.name}`],
-            newState: this.world,
-          };
-        }
-        itemToDrop.location = player.location!;
-        player.inventory = player.inventory.filter((id) =>
-          id !== action.target
-        );
-        changes.push(`Dropped ${itemToDrop.name}`);
-        break;
-      }
-
-      case "USE_ITEM": {
-        const itemToUse = this.entityMap.get(action.target!);
-        if (!itemToUse || itemToUse.type !== "item") {
-          return {
-            success: false,
-            changes: [`Invalid item: ${action.target}`],
-            newState: this.world,
-          };
-        }
-        if (!player.inventory?.includes(action.target!)) {
-          return {
-            success: false,
-            changes: [`Item not in inventory: ${itemToUse.name}`],
-            newState: this.world,
-          };
-        }
-        if (itemToUse.effects) {
-          if (itemToUse.effects.health) {
-            player.health = Math.max(
-              0,
-              Math.min(100, player.health! + itemToUse.effects.health),
-            );
-            changes.push(
-              `Health ${
-                itemToUse.effects.health > 0 ? "increased" : "decreased"
-              } by ${
-                Math.abs(itemToUse.effects.health)
-              } (now ${player.health})`,
-            );
-          }
-          if (itemToUse.effects.energy) {
-            player.energy = Math.max(
-              0,
-              Math.min(100, player.energy! + itemToUse.effects.energy),
-            );
-            changes.push(
-              `Energy ${
-                itemToUse.effects.energy > 0 ? "increased" : "decreased"
-              } by ${
-                Math.abs(itemToUse.effects.energy)
-              } (now ${player.energy})`,
-            );
-          }
-        }
-        if (itemToUse.consumable) {
-          player.inventory = player.inventory.filter((id) =>
-            id !== action.target
-          );
-          const index = this.world.entities.findIndex((e) =>
-            e.id === action.target
-          );
-          if (index !== -1) {
-            this.world.entities.splice(index, 1);
-            this.entityMap.delete(action.target!);
-          }
-          changes.push(`${itemToUse.name} was consumed`);
-        }
-        break;
-      }
-
-      case "EXAMINE": {
-        const targetEntity = this.entityMap.get(action.target!);
-        if (!targetEntity) {
-          return {
-            success: false,
-            changes: [`Invalid target: ${action.target}`],
-            newState: this.world,
-          };
-        }
-        changes.push(`Examined ${targetEntity.name}`);
-        break;
-      }
-
-      case "REST":
-        player.energy = Math.min(100, player.energy! + 70);
-        changes.push(
-          `Rested and recovered 70 energy (now ${player.energy})`,
-        );
-        break;
-
-      case "WAIT":
-        changes.push("Time passes...");
-        break;
-
-      case "EXPLORE":
-        changes.push(
-          "You explore your surroundings, searching for something new...",
-        );
-        // The actual discovery will be handled in the main game loop
-        break;
+    if (item.effects?.energy) {
+      const newEnergy = Math.max(
+        0,
+        Math.min(100, player.energy! + item.effects.energy),
+      );
+      this.transactionManager.recordChange(
+        createEnergyChange(
+          player.id,
+          player.energy!,
+          newEnergy,
+          turn,
+          `used ${item.name}`,
+        ),
+      );
     }
 
+    // Remove consumable items
+    if (item.consumable) {
+      // Remove from inventory
+      const newInventory = (player.inventory || []).filter((id) =>
+        id !== item.id
+      );
+      this.transactionManager.recordChange(
+        createInventoryChange(
+          player.id,
+          player.inventory || [],
+          newInventory,
+          turn,
+          "remove",
+          item.name,
+        ),
+      );
+
+      // Mark entity as removed
+      this.transactionManager.recordChange({
+        entityId: item.id,
+        field: "__remove_entity__",
+        oldValue: item,
+        newValue: null,
+        turn,
+        description: `${item.name} was consumed.`,
+      });
+    }
+  }
+
+  private recordExamineChanges(action: Action, turn: number): void {
+    const target = this.entityMap.get(action.target!);
+    if (!target) throw new Error(`Target not found: "${action.target}"`);
+
+    // Record as a no-op change for tracking examination
+    this.transactionManager.recordChange({
+      entityId: action.target!,
+      field: "__examined__",
+      oldValue: null,
+      newValue: turn,
+      turn,
+      description: `Examined ${target.name}.`,
+    });
+  }
+
+  private recordRestChanges(player: Entity, turn: number): void {
+    const newEnergy = Math.min(100, player.energy! + 70);
+    this.transactionManager.recordChange(
+      createEnergyChange(player.id, player.energy!, newEnergy, turn, "resting"),
+    );
+  }
+
+  // Legacy method signature for backwards compatibility
+  executeActionLegacy(
+    playerId: string,
+    action: Action,
+  ): { success: boolean; changes: string[]; newState: World } {
+    const result = this.executeAction(playerId, action, 0);
     return {
-      success: true,
-      changes,
-      newState: this.world,
+      success: result.success,
+      changes: result.changes,
+      newState: result.world,
     };
   }
 
