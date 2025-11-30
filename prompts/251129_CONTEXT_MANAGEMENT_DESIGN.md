@@ -1,5 +1,16 @@
 # Context-Aware World Explorer: Design Specification
 
+> **Deno Style Guide Compliance**
+>
+> This document follows [Deno's official style guide](https://docs.deno.com/runtime/contributing/style_guide/):
+> - **`mod.ts`** instead of `index.ts` for module entry points
+> - **`snake_case`** for filenames (e.g., `scene_manager.ts`)
+> - **`*_test.ts`** suffix for test files (e.g., `scene_test.ts`)
+> - **Underscore prefix** for internal modules (e.g., `_internal.ts`)
+> - **Top-level `function`** keyword instead of arrow functions
+> - **JSDoc** on all exported symbols
+> - **Max 2 required args** plus optional options object for exported functions
+
 ## Overview
 
 This document describes the architecture for a long-running, LLM-powered text
